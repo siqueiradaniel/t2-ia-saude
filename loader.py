@@ -12,7 +12,7 @@ class PatientDataset(Dataset):
         self.df = pd.read_csv(csv_path)
         self.base_path = base_path
         self.transform = transform
-        
+
         # 2. Carregar e concatenar os arquivos de descrição
         desc_files = [
             './csv/mass_case_description_train_set.csv',
@@ -27,30 +27,26 @@ class PatientDataset(Dataset):
                 desc_df = pd.read_csv(f)
                 all_desc_df = pd.concat([all_desc_df, desc_df], ignore_index=True)
         
-        # 3. Criar o dicionário de busca para patologia
-        # A chave para o dicionário é o nome do diretório do paciente,
-        # que corresponde exatamente ao 'PatientID' no dicom_info.csv
-        pathology_dict = {}
-        for index, row in all_desc_df.iterrows():
-            # Tentar usar o 'image file path' primeiro
-            if pd.notna(row['image file path']):
-                key = row['image file path'].split('/')[0]
-                pathology_dict[key] = row['pathology']
+        # 3. Criar uma chave de união mais robusta
+        # A coluna 'SeriesInstanceUID' está presente em ambos os DataFrames
+        # e identifica um conjunto de imagens (ex: a mamografia de uma mama).
+        # Para os arquivos de descrição, a SeriesInstanceUID é o penúltimo diretório no path.
+        all_desc_df['SeriesInstanceUID'] = all_desc_df['image file path'].str.split('/').str[-2]
+        
+        # 4. Mesclar com o DataFrame principal para adicionar 'pathology'
+        self.df = pd.merge(self.df, all_desc_df[['SeriesInstanceUID', 'pathology']], 
+                           on='SeriesInstanceUID', how='left', suffixes=('', '_desc'))
+        
+        # O merge pode criar colunas duplicadas.
+        if 'pathology_desc' in self.df.columns:
+            self.df['pathology'].fillna(self.df['pathology_desc'], inplace=True)
+            self.df.drop(columns='pathology_desc', inplace=True)
             
-            # Se não houver, usar o 'cropped image file path'
-            if pd.notna(row['cropped image file path']):
-                key = row['cropped image file path'].split('/')[0]
-                pathology_dict[key] = row['pathology']
-        
-        # 4. Usar o dicionário para adicionar a coluna 'pathology' ao DataFrame principal
-        # A coluna 'PatientID' no seu df já é a chave que precisamos
-        self.df['pathology'] = self.df['PatientID'].map(pathology_dict)
-        
         # 5. Aplicar o mapeamento de rótulos binários
         class_mapper = {"MALIGNANT": 1, "BENIGN": 0, "BENIGN_WITHOUT_CALLBACK": 0}
         self.df["label"] = self.df["pathology"].str.upper().map(class_mapper)
         
-        # 6. Agrupar por PatientID limpo
+        # 6. Agrupar por 'PatientID' limpo
         self.df['CleanPatientID'] = self.df['PatientID'].str.extract(r'(P_\d+)')
         self.grouped = self.df.groupby('CleanPatientID')
         self.patients = list(self.grouped.groups.keys())
@@ -62,35 +58,40 @@ class PatientDataset(Dataset):
         patient_id = self.patients[idx]
         
         patient_data = self.grouped.get_group(patient_id)
+        
+        # Extrair os caminhos e os UIDs das imagens para este paciente
         image_paths = patient_data['image_path'].tolist()
+        sop_instance_uids = patient_data['SOPInstanceUID'].tolist()
         
         images = []
-        for path in image_paths:
+        labels_dict = {}
+        for path, sop_uid in zip(image_paths, sop_instance_uids):
             full_path = os.path.join(self.base_path, path)
             try:
                 image = Image.open(full_path).convert('RGB')
                 if self.transform:
                     image = self.transform(image)
                 images.append(image)
+                
+                # Adicionar ao dicionário de rótulos
+                # O rótulo para esta imagem é o da linha correspondente no DataFrame
+                label = patient_data[patient_data['SOPInstanceUID'] == sop_uid]['label'].iloc[0]
+                labels_dict[sop_uid] = label
             except FileNotFoundError:
                 print(f"Arquivo não encontrado: {full_path}")
-
+        
         if not images:
-            # Retornar o rótulo nan se não houver imagens
-            return torch.Tensor(), patient_id, float('nan')
+            return torch.Tensor(), patient_id, {}
 
         images_tensor = torch.stack(images)
-        patient_label = patient_data['label'].iloc[0]
-        return images_tensor, patient_id, patient_label
+        return images_tensor, patient_id, labels_dict
 
 # ---
 ### **Exemplo de uso**
 
 if __name__ == '__main__':
-    # Seus caminhos aqui (ajuste conforme necessário)
-    csv_path = './csv/dicom_info.csv' 
-    base_path = './' 
-
+    csv_path = './csv/dicom_info.csv'
+    base_path = './'
     transform_op = transforms.Compose([
         transforms.Resize(256),
         transforms.CenterCrop(224),
@@ -105,13 +106,16 @@ if __name__ == '__main__':
 
     print(f"Total de pacientes no dataset: {len(patient_dataset)}")
 
-    for i in range(5):
+    for i in range(2):
         try:
-            images, p_id, label = patient_dataset[i]
+            images, p_id, labels_dict = patient_dataset[i]
             print(f"\nID do paciente: {p_id}")
-            print(f"Rótulo (0=Benigno, 1=Maligno): {label}")
-            print(f"Número de imagens: {len(images)}")
+            print(f"Número de imagens para este paciente: {len(images)}")
             if len(images) > 0:
+                first_image_uid = list(labels_dict.keys())[0]
+                print(f"Rótulos das imagens para este paciente:")
+                for uid, label in labels_dict.items():
+                    print(f"  - Imagem {uid}: {label} (0=Benigno, 1=Maligno)")
                 print(f"Formato da primeira imagem: {images[0].shape}")
         except Exception as e:
             print(f"Erro ao processar o paciente {i}: {e}")
