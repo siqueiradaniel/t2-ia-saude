@@ -6,7 +6,6 @@ import torch
 from torchvision import transforms
 from torch.utils.data import Dataset
 
-# Definindo a classe PatientDataset
 class PatientDataset(Dataset):
     def __init__(self, csv_path, base_path, transform=None):
         # 1. Carregar o CSV principal
@@ -28,17 +27,24 @@ class PatientDataset(Dataset):
                 desc_df = pd.read_csv(f)
                 all_desc_df = pd.concat([all_desc_df, desc_df], ignore_index=True)
         
-        # 3. Normalizar e criar a chave de mesclagem para o dataframe de descrição
-        # Extrair a chave 'Mass-Training_P_00001_LEFT_CC' do path
-        all_desc_df['merge_key'] = all_desc_df['image file path'].str.split('/').str[0].str.strip()
-
-        print(all_desc_df.shape)
+        # 3. Criar o dicionário de busca para patologia
+        # A chave para o dicionário é o nome do diretório do paciente,
+        # que corresponde exatamente ao 'PatientID' no dicom_info.csv
+        pathology_dict = {}
+        for index, row in all_desc_df.iterrows():
+            # Tentar usar o 'image file path' primeiro
+            if pd.notna(row['image file path']):
+                key = row['image file path'].split('/')[0]
+                pathology_dict[key] = row['pathology']
+            
+            # Se não houver, usar o 'cropped image file path'
+            if pd.notna(row['cropped image file path']):
+                key = row['cropped image file path'].split('/')[0]
+                pathology_dict[key] = row['pathology']
         
-        # 4. Mesclar com o DataFrame principal para adicionar 'pathology'
-        # A chave de mesclagem no DataFrame principal já é a coluna 'PatientID'
-        self.df = pd.merge(self.df, all_desc_df[['merge_key', 'pathology']], 
-                           left_on='PatientID', right_on='merge_key', how='left')
-        self.df.drop(columns=['merge_key'], inplace=True)
+        # 4. Usar o dicionário para adicionar a coluna 'pathology' ao DataFrame principal
+        # A coluna 'PatientID' no seu df já é a chave que precisamos
+        self.df['pathology'] = self.df['PatientID'].map(pathology_dict)
         
         # 5. Aplicar o mapeamento de rótulos binários
         class_mapper = {"MALIGNANT": 1, "BENIGN": 0, "BENIGN_WITHOUT_CALLBACK": 0}
@@ -70,7 +76,8 @@ class PatientDataset(Dataset):
                 print(f"Arquivo não encontrado: {full_path}")
 
         if not images:
-            return torch.Tensor(), patient_id
+            # Retornar o rótulo nan se não houver imagens
+            return torch.Tensor(), patient_id, float('nan')
 
         images_tensor = torch.stack(images)
         patient_label = patient_data['label'].iloc[0]
@@ -90,7 +97,6 @@ if __name__ == '__main__':
         transforms.ToTensor()
     ])
 
-    # Instanciando o dataset
     patient_dataset = PatientDataset(
         csv_path=csv_path,
         base_path=base_path,
@@ -99,16 +105,13 @@ if __name__ == '__main__':
 
     print(f"Total de pacientes no dataset: {len(patient_dataset)}")
 
-    # Acessando o primeiro paciente
-    
     for i in range(5):
-        first_patient_images, first_patient_id, first_patient_label = patient_dataset[i]
-        print(f"\nID do primeiro paciente: {first_patient_id}")
-        print(f"Rótulo do primeiro paciente (0=Benigno, 1=Maligno): {first_patient_label}")
-        print(f"Número de imagens para este paciente: {len(first_patient_images)}")
-        if len(first_patient_images) > 0:
-            print(f"Formato da primeira imagem: {first_patient_images[i].shape}")
-
-
-
-
+        try:
+            images, p_id, label = patient_dataset[i]
+            print(f"\nID do paciente: {p_id}")
+            print(f"Rótulo (0=Benigno, 1=Maligno): {label}")
+            print(f"Número de imagens: {len(images)}")
+            if len(images) > 0:
+                print(f"Formato da primeira imagem: {images[0].shape}")
+        except Exception as e:
+            print(f"Erro ao processar o paciente {i}: {e}")
