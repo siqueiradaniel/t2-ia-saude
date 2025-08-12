@@ -3,7 +3,7 @@ import pandas as pd
 import os
 
 class MyDataset (data.Dataset):
-    def __init__(self, jpeg_path, csv_path, dicom_info_filename, mass_train_filename, calc_train_filename, mass_test_filename, calc_test_filename):
+    def __init__(self, jpeg_path, csv_path, dicom_info_filename, mass_train_filename, calc_train_filename, mass_test_filename, calc_test_filename, transform=None):
         
         super().__init__()
         '''
@@ -75,6 +75,38 @@ class MyDataset (data.Dataset):
 
         print(self.pacients[0])
 
+    def __len__(self):
+        """ This method just returns the dataset size """
+        return len(self.pacients)
+
+
+    def __getitem__(self, pacient, item):
+        """
+        It gets the image, labels and meta-data (if applicable) according to the index informed in `item`.
+        It also performs the transform on the image.
+
+        :param item (int): an index in the interval [0, ..., len(img_paths)-1]
+        :return (tuple): a tuple containing the image, its label and meta-data (if applicable)
+        """
+
+        image = Image.open(self.pacients[pacient][item]['image_path']).convert("RGB")
+
+        if transform is not None:
+            image = self.transform(image)
+
+        img_id = self.pacients[pacient][item]['image_path'].split('/')[-1].split('.')[0]
+
+        if self.meta_data is None:
+            meta_data = []
+        else:
+            meta_data = self.meta_data[item]
+
+        if self.labels is None:
+            labels = []
+        else:
+            labels = self.labels[item]
+
+        return image, labels, meta_data, img_id
 
 
 
