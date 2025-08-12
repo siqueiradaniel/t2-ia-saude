@@ -6,6 +6,7 @@ import os
 import matplotlib.pyplot as plt
 import torchvision.transforms as transforms
 import torchvision.transforms.functional as F
+from torch.utils.data import DataLoader
 
 class MyDataset (data.Dataset):
     def __init__(self, imgs_path, csv_path, dicom_info_filename, mass_train_filename, calc_train_filename, mass_test_filename, calc_test_filename, transform=None):
@@ -13,13 +14,13 @@ class MyDataset (data.Dataset):
         super().__init__()
         '''
         patients: [[{
-            'SeriesInstanceUID': "",
-            'image_path': "",
-            'pathology': "",
-            'Laterality': "",
-            'SeriesDescription': "",
-            'PatientOrientation': "",
-            'abnormality type': ""
+            'SeriesInstanceUID': string,
+            'image_path': string,
+            'pathology': string,
+            'Laterality': string,
+            'SeriesDescription': string,
+            'PatientOrientation': string,
+            'abnormality type': string
         }]]
         '''
         self.patients = []
@@ -83,9 +84,39 @@ class MyDataset (data.Dataset):
             self.transform = transforms.ToTensor()
 
     def __len__(self):
-        """ This method just returns the dataset size """
-        return len(self.patients)
+        """Total de imagens no dataset (não apenas pacientes)"""
+        return sum(len(p) for p in self.patients)
 
+    def __getitem__(self, idx):
+        """
+        Retorna uma única imagem, rótulo e metadados a partir de um índice linear.
+        """
+
+        # Map index to patient and image index
+        count = 0
+        for patient in self.patients:
+            if idx < count + len(patient):
+                image_data = patient[idx - count]
+                break
+            count += len(patient)
+        else:
+            raise IndexError("Index out of range")
+
+        # Carrega a imagem
+        image = Image.open(os.path.join(self.imgs_path, image_data['image_path'])).convert("RGB")
+
+        if self.transform is not None:
+            image = self.transform(image)
+
+        label = image_data['pathology']
+        meta_data = image_data
+        uid = image_data['SeriesInstanceUID']
+
+        return image, label, meta_data, uid
+
+    
+    def get_patients(self):
+        return self.patients
 
     def get_image_by_patient(self, patient_index, image_index):
         """
@@ -107,30 +138,68 @@ class MyDataset (data.Dataset):
 
         return image, labels, meta_data, img_id
 
+def get_data_loader(imgs_path,
+                    csv_path,
+                    dicom_info_filename,
+                    mass_train_filename,
+                    calc_train_filename,
+                    mass_test_filename,
+                    calc_test_filename,
+                    transform=None,
+                    batch_size=30,
+                    shuffle=True,
+                    num_workers=4,
+                    pin_memory=True):
+    """
+    Cria um DataLoader a partir do dataset CBIS-DDSM com as transformações e parâmetros especificados.
+    
+    :return: torch.utils.data.DataLoader
+    """
 
+    dataset = MyDataset(
+        imgs_path=imgs_path,
+        csv_path=csv_path,
+        dicom_info_filename=dicom_info_filename,
+        mass_train_filename=mass_train_filename,
+        calc_train_filename=calc_train_filename,
+        mass_test_filename=mass_test_filename,
+        calc_test_filename=calc_test_filename,
+        transform=transform
+    )
 
-myDataset = MyDataset("./", 
-                      "./csv/", 
-                      "dicom_info.csv",
-                      "mass_case_description_train_set.csv", 
-                      "calc_case_description_train_set.csv", 
-                      "mass_case_description_test_set.csv",
-                      "calc_case_description_test_set.csv")
+    dataloader = DataLoader(
+        dataset=dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers,
+        pin_memory=pin_memory
+    )
 
-image, label, meta_data, uid = myDataset.get_image_by_patient(0, 0)
+    return dataloader
 
-if isinstance(image, torch.Tensor):
-    # Convert tensor to PIL image for saving
-    from torchvision.transforms.functional import to_pil_image
-    image = to_pil_image(image)
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor()
+])
 
-print()
-print("#"*30, "LOADER", "#"*30)
-print("TESTE: Abrindo info de paciente 0 e imagem 0")
-image.save("output_image.jpg")
-print("Label:", label)
-print("UID:", uid)
-print("Meta-data:", meta_data)
-print("Image saved as output_image.jpg")
-print("#"*68)
-print()
+loader = get_data_loader(
+    imgs_path="./CBIS-DDSM/jpeg/",
+    csv_path="./csv/",
+    dicom_info_filename="dicom_info.csv",
+    mass_train_filename="mass_case_description_train_set.csv",
+    calc_train_filename="calc_case_description_train_set.csv",
+    mass_test_filename="mass_case_description_test_set.csv",
+    calc_test_filename="calc_case_description_test_set.csv",
+    transform=transform,
+    batch_size=16,
+    shuffle=True,
+    num_workers=2,
+    pin_memory=True
+)
+
+# Pegando um batch
+for images, labels, meta_data, uids in loader:
+    print("Batch shape:", images.shape)
+    print("Labels:", labels)
+    print("UIDs:", uids)
+    break
