@@ -1,12 +1,38 @@
 from torch.utils import data
 from PIL import Image
 import torch
+import numpy as np
 import pandas as pd
 import os
 import matplotlib.pyplot as plt
-import torchvision.transforms as transforms
+from torchvision import transforms
 import torchvision.transforms.functional as F
+from torchvision.transforms.functional import to_pil_image
 from torch.utils.data import DataLoader
+
+def find_roi_mask(image_path):
+    folder = os.path.dirname(image_path)
+    base_name = os.path.basename(image_path)
+    for f in os.listdir(folder):
+        if f != base_name and f.lower().endswith(('.jpg', '.jpeg', '.png', '.dcm')):
+            return os.path.join(folder, f)
+    return None
+
+def apply_roi_mask(image_path):
+    image = Image.open(image_path).convert("RGB")
+    mask_path = find_roi_mask(image_path)
+    if mask_path is None:
+        return image
+
+    mask = Image.open(mask_path).convert("L")
+    # Redimensiona a máscara para o tamanho da imagem
+    mask = mask.resize(image.size, resample=Image.NEAREST)
+    
+    mask = np.array(mask)
+    mask = (mask > 0).astype(np.uint8)
+    image_array = np.array(image)
+    masked_image_array = image_array * mask[:, :, None]
+    return Image.fromarray(masked_image_array)
 
 def my_collate_fn(batch):
     images, labels, meta_data, uids = zip(*batch)
@@ -57,17 +83,20 @@ class MyDataset (data.Dataset):
         :return (tuple): a tuple containing the image, its label and meta-data (if applicable)
         """
 
-        image = Image.open(self.imgs_path[item]).convert("RGB")
+        # Cut using ROI
+        image = apply_roi_mask(self.imgs_path[item])
 
         # Applying the transformations
         image = self.transform(image)
 
-        img_id = self.meta_data[item]['SeriesInstanceUID']
 
         if self.meta_data is None:
             meta_data = []
+            img_id = None
         else:
             meta_data = self.meta_data[item]
+            img_id = meta_data['SeriesInstanceUID']
+
 
         if self.labels is None:
             labels = []
@@ -77,7 +106,7 @@ class MyDataset (data.Dataset):
         return image, labels, meta_data, img_id
 
 
-def get_data_loader (imgs_path, labels, meta_data=None, transform=None, batch_size=30, shuf=True, num_workers=4,
+def get_data_loader (imgs_path, labels, meta_data=None, transform=None, batch_size=5, shuf=True, num_workers=4,
                      pin_memory=False):
     """
     This function gets a list og images path, their labels and meta-data (if applicable) and returns a DataLoader
@@ -133,7 +162,7 @@ mass_test.rename (columns= {"patient_id" : "patient id", "breast_density" : "bre
 calc_test.rename (columns= {"patient_id" : "patient id"}, inplace=True)
 
 # Remove full mammogram images
-dicom_info = dicom_info[dicom_info["SeriesDescription"] != "full mammogram images"]
+dicom_info = dicom_info[dicom_info["SeriesDescription"] == "cropped images"]
 
 # Concat dataframes
 train_data_csv = pd.concat([mass_train, calc_train], ignore_index=True)
@@ -170,10 +199,21 @@ meta_data = train_csv_merged[
 # Create DataLoader
 loader = get_data_loader (imgs_path, labels, meta_data, transform)
 
-# Pegando um batch
+
+### Cria diretório imgs
+save_dir = "./imgs"
+os.makedirs(save_dir, exist_ok=True)
+
+# Pegando um batch e salva localmente
+# RETIRAR SALVAMENTO -------------------------------------------------------------------------
 for images, labels, meta_data, uids in loader:
     print("Batch shape:", images.shape)
     print("Labels:", labels)
     print("UIDs:", uids)
     print("Metadata:\n", meta_data)
+
+    for i in range(images.shape[0]):  # itera sobre o batch
+        img = to_pil_image(images[i])  # converte tensor para PIL Image
+        filename = f"{uids[i]}_{labels[i]}.jpg"  # nome do arquivo
+        img.save(os.path.join(save_dir, filename))
     break
