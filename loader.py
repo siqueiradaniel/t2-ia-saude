@@ -183,7 +183,7 @@ transform = transforms.Compose([
 ])
 
 loader = get_data_loader(
-    imgs_path="./CBIS-DDSM/jpeg/",
+    imgs_path="./",
     csv_path="./csv/",
     dicom_info_filename="dicom_info.csv",
     mass_train_filename="mass_case_description_train_set.csv",
