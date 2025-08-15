@@ -79,7 +79,7 @@ A saída no terminal incluirá informações como:
 ## Autores
 
 ```
-Daniel Siqueira de Oliveira
 Arthur
+Daniel 
 Daniel
 ```
