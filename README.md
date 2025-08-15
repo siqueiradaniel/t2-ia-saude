@@ -7,6 +7,7 @@ Este projeto fornece uma interface para carregar e explorar o dataset **CBIS-DDS
 1. Baixe o dataset no Kaggle:
    [https://www.kaggle.com/datasets/awsaf49/cbis-ddsm-breast-cancer-image-dataset](https://www.kaggle.com/datasets/awsaf49/cbis-ddsm-breast-cancer-image-dataset)
 
+
 2. Crie a pasta `CBIS-DDSM` no diretório do projeto:
 
    ```bash
@@ -59,6 +60,7 @@ A saída no terminal incluirá informações como:
 * `UID`
 * Metadados associados
 
+
 ## Estrutura Esperada
 
 ```
@@ -77,7 +79,9 @@ A saída no terminal incluirá informações como:
 ```
 
 ## Autores
-
+```
 Daniel Siqueira de Oliveira
 Arthur
 Daniel
+```
+
