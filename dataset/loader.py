@@ -142,7 +142,9 @@ def get_data_loader (imgs_path, labels, meta_data=None, transform=None, batch_si
 
 ##### EXEMPLO DE USO
 # Load CSV
-csv_path="./csv/"
+save_dir = "./data/result_imgs"
+data_path = './data/'
+csv_path="./data/csv/"
 dicom_info_filename="dicom_info.csv"
 mass_train_filename="mass_case_description_train_set.csv"
 calc_train_filename="calc_case_description_train_set.csv"
@@ -187,8 +189,9 @@ transform = transforms.Compose([
     transforms.ToTensor()
 ])
 
+
 # Parametros
-imgs_path = list(train_csv_merged['image_path'])
+imgs_path = [data_path + path for path in train_csv_merged['image_path']]
 labels = list(train_csv_merged['pathology'])
 meta_data = train_csv_merged[
     ['Laterality', 'SeriesDescription', 'SeriesInstanceUID', 
@@ -199,9 +202,7 @@ meta_data = train_csv_merged[
 # Create DataLoader
 loader = get_data_loader (imgs_path, labels, meta_data, transform)
 
-
 ### Cria diretório imgs
-save_dir = "./imgs"
 os.makedirs(save_dir, exist_ok=True)
 
 # Pegando um batch e salva localmente
