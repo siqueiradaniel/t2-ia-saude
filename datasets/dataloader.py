@@ -29,11 +29,21 @@ def apply_roi_mask(image_path):
     image_array = np.array(image)
     masked_image_array = image_array * mask[:, :, None]
     return Image.fromarray(masked_image_array)
+    
+# mapa de classes
+class_mapping = {'BENIGN':0, 'BENIGN_WITHOUT_CALLBACK': 0, 'MALIGNANT': 1}
 
 def my_collate_fn(batch):
     images, labels, meta_data, uids = zip(*batch)
-    images = torch.stack(images, 0)          # empilha imagens
-    return images, list(labels), list(meta_data), list(uids)
+    images = torch.stack(images, 0)
+    
+    # converte strings para inteiros
+    labels = [class_mapping[label] for label in labels]
+    labels = torch.tensor(labels, dtype=torch.long)
+
+    return images, labels, list(meta_data), list(uids)
+
+
 
 
 class MyDataset (data.Dataset):
@@ -102,7 +112,7 @@ class MyDataset (data.Dataset):
         return image, labels, meta_data, img_id
 
 
-def get_data_loader (imgs_path, labels, meta_data=None, transform=None, batch_size=5, shuf=True, num_workers=4,
+def get_data_loader (imgs_path, labels, meta_data=None, transform=None, batch_size=30, shuf=True, num_workers=4,
                      pin_memory=False):
     """
     This function gets a list og images path, their labels and meta-data (if applicable) and returns a DataLoader

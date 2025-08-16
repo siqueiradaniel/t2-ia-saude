@@ -4,3 +4,4 @@ output_image.jpg
 *.zip
 *.jpg
 __pycache__
+models/my_cnn.pth
