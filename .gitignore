@@ -3,3 +3,4 @@ CBIS-DDSM/
 output_image.jpg
 *.zip
 *.jpg
+__pycache__
