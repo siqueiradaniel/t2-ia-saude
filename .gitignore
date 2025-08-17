@@ -5,3 +5,8 @@ output_image.jpg
 *.jpg
 __pycache__
 models/my_cnn.pth
+kaggle.json
+data/csv/calc_case_description_test_set.csv
+data/csv/calc_case_description_train_set.csv
+data/csv/mass_case_description_test_set.csv
+data/csv/mass_case_description_train_set.csv
