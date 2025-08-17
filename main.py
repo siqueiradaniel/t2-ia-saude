@@ -43,8 +43,8 @@ def load_data(csv_path, dicom_info_filename,
     # Criar colunas auxiliares para merge
     train_data_csv["SeriesInstanceUID1"] = train_data_csv["image file path"].str.split('/').str[2]
     train_data_csv["SeriesInstanceUID2"] = train_data_csv["cropped image file path"].str.split('/').str[2]
-    test_data_csv["SeriesInstanceUID1"] = train_data_csv["image file path"].str.split('/').str[2]
-    test_data_csv["SeriesInstanceUID2"] = train_data_csv["cropped image file path"].str.split('/').str[2]
+    test_data_csv["SeriesInstanceUID1"] = test_data_csv["image file path"].str.split('/').str[2]
+    test_data_csv["SeriesInstanceUID2"] = test_data_csv["cropped image file path"].str.split('/').str[2]
 
     # Merge
     merge1 = pd.merge(dicom_info, train_data_csv, left_on="SeriesInstanceUID", right_on="SeriesInstanceUID1", how='inner')
@@ -61,7 +61,7 @@ def load_data(csv_path, dicom_info_filename,
 def main():
     # Configurações
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    num_epochs = 10
+    num_epochs = 30
     learning_rate = 0.001
     num_classes = 2
     batch_size = 32
@@ -84,7 +84,7 @@ def main():
     train_imgs_path = [data_path + path for path in train_csv['image_path']]
     train_labels = list(train_csv['pathology'])
 
-    test_imgs_path = [data_path + path for path in test_csv['image file path']]
+    test_imgs_path = [data_path + path for path in test_csv['image_path']]
     test_labels = list(test_csv['pathology'])
 
     # DataLoaders

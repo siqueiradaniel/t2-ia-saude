@@ -3,6 +3,11 @@ import torch
 def train(model, dataloader, criterion, optimizer, device, num_epochs=10):
     model.to(device)
 
+    history = {
+        "train_loss": [],
+        "train_acc": []
+    }
+
     for epoch in range(num_epochs):
         model.train()  # modo treino
         running_loss = 0.0
@@ -32,4 +37,8 @@ def train(model, dataloader, criterion, optimizer, device, num_epochs=10):
 
         print(f"Epoch {epoch+1}/{num_epochs} - Loss: {epoch_loss:.4f} - Acc: {epoch_acc:.4f}")
 
-    return model
+        # Salva histórico
+        history["train_loss"].append(epoch_loss)
+        history["train_acc"].append(epoch_acc.item())
+
+    return model, history
