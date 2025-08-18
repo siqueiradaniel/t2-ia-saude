@@ -74,6 +74,17 @@ def main():
         calc_test_filename="calc_case_description_test_set.csv",
         data_path=data_path
     )
+
+    # Calcule os pesos uma única vez com base no dataset de treino completo
+    pathology_counts = train_csv_full['pathology'].value_counts()
+    count_class_0 = pathology_counts.get(0, 1) # Usar .get com default para evitar erro se uma classe não estiver presente
+    count_class_1 = pathology_counts.get(1, 1)
+
+    # O peso é o inverso da frequência da classe
+    weight_class_0 = (count_class_0 + count_class_1) / count_class_0
+    weight_class_1 = (count_class_0 + count_class_1) / count_class_1
+    class_weights = torch.tensor([weight_class_0, weight_class_1], dtype=torch.float32).to(device)
+    print(f"Pesos das classes calculados: {class_weights}")
     
     # --- Loop de Validação Cruzada ---
     for fold, (train_indices, val_indices) in enumerate(kf.split(train_csv_full)):
@@ -101,7 +112,7 @@ def main():
             model = MyCNN(num_classes=2)
         model.to(device)
 
-        criterion = nn.CrossEntropyLoss()
+        criterion = nn.CrossEntropyLoss(weight=class_weights)
         optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
         trained_model, _ = train(
