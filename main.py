@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
-from sklearn.model_selection import KFold
+from sklearn.model_selection import StratifiedKFold
 from scipy.stats import wilcoxon, ttest_rel
 
 # Imports de pastas do projeto
@@ -72,7 +72,7 @@ def main():
     # --- Configurações ---
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Usando dispositivo: {device}")
-    num_epochs = 1
+    num_epochs = 30
     learning_rate = 0.001
     batch_size = 32
     data_path = "./data/"
@@ -86,7 +86,7 @@ def main():
 
     # --- Configurações da Validação Cruzada ---
     N_SPLITS = 2
-    kf = KFold(n_splits=N_SPLITS, shuffle=True, random_state=42)
+    kf = StratifiedKFold(n_splits=N_SPLITS, shuffle=True, random_state=42)
 
     # --- Carregar Dados ---
     print("Carregando e preparando os dados...")
@@ -99,12 +99,16 @@ def main():
         calc_test_filename="calc_case_description_test_set.csv",
         data_path=data_path
     )
-
+    
     # --- Reduz o dataset para testes ---
-    if ISDEVELOPING:
-        print("\n----------------- DESENVOLVIMENTO: USANDO 20% DOS DADOS -----------------\n")
-        DEV_FRAC = 0.2  # 20%. Ajuste para 0.1, 0.3, etc., se quiser.
-        train_csv_full = train_csv_full.sample(frac=DEV_FRAC, random_state=42).reset_index(drop=True)
+    if (ISDEVELOPING):
+        print ("\n----------------- ATENÇÃO: VOCE ESTÁ RODANDO COM APENAS PARTE DOS DADOS PARA DESENVOLVIMENTO -----------------\n")
+        # DataFrame temporário para garantir que a amostragem seja feita por paciente
+        DEV_FRAC = 0.05
+        temp_df = train_csv_full[['patient id', 'pathology']].drop_duplicates()
+        temp_df_sampled = temp_df.sample(frac=DEV_FRAC, random_state=42)
+        # DataFrame completo com os pacientes selecionados
+        train_csv_full = train_csv_full[train_csv_full['patient id'].isin(temp_df_sampled['patient id'])].reset_index(drop=True)
         test_csv = test_csv.sample(frac=DEV_FRAC, random_state=42).reset_index(drop=True)
         print("Tamanhos (após amostragem):",
             f"train={len(train_csv_full)} | test={len(test_csv)}")
@@ -113,7 +117,12 @@ def main():
         print("Distribuição de classes (test):")
         print(test_csv['pathology'].value_counts())
 
-    # Pesos de classe (com base no dataset reduzido de treino)
+    # --- Extrai IDs de paciente e rótulos ---
+    patient_info = train_csv_full[['patient id', 'pathology']].drop_duplicates().sort_values(by='patient id').reset_index(drop=True)
+    patient_ids = patient_info['patient id']
+    patient_labels = patient_info['pathology']
+
+    # Calcule os pesos uma única vez com base no dataset de treino completo
     pathology_counts = train_csv_full['pathology'].value_counts()
     pathology_counts_dict = pathology_counts.to_dict()
     count_class_0 = pathology_counts_dict.get(0, 1)
@@ -128,10 +137,21 @@ def main():
     # --- Validação Cruzada do MyCNN ---
     print("\n\n========== VALIDANDO MyCNN COM VALIDAÇÃO CRUZADA ==========")
     mycnn_fold_results = []
-    for fold, (train_indices, val_indices) in enumerate(kf.split(train_csv_full)):
+    for fold, (train_indices, val_indices) in enumerate(kf.split(patient_ids, y=patient_labels)):
         print(f"\n========== FOLD {fold + 1}/{N_SPLITS} ==========")
-        train_df_fold = train_csv_full.iloc[train_indices]
-        val_df_fold = train_csv_full.iloc[val_indices]
+        
+        # Obtem os IDs de paciente de treino e validação
+        train_patient_ids = patient_ids.iloc[train_indices]
+        val_patient_ids = patient_ids.iloc[val_indices]
+
+        # Filtra o DataFrame original com base nos IDs
+        train_df_fold = train_csv_full[train_csv_full['patient id'].isin(train_patient_ids)]
+        val_df_fold = train_csv_full[train_csv_full['patient id'].isin(val_patient_ids)]
+
+        # Verifique se o vazamento foi evitado
+        common_patients = set(train_df_fold['patient id']).intersection(set(val_df_fold['patient id']))
+        if common_patients:
+            raise ValueError(f"Vazamento de dados detectado! Pacientes em comum: {common_patients}")
 
         train_loader = get_data_loader(
             imgs_path=[data_path + path for path in train_df_fold['image_path']],
@@ -169,11 +189,23 @@ def main():
     # --- Validação Cruzada do ResNet50 ---
     print("\n\n========== VALIDANDO ResNet50 COM VALIDAÇÃO CRUZADA ==========")
     resnet_fold_results = []
-    for fold, (train_indices, val_indices) in enumerate(kf.split(train_csv_full)):
+    for fold, (train_indices, val_indices) in enumerate(kf.split(patient_ids, y=patient_labels)):
         print(f"\n========== FOLD {fold + 1}/{N_SPLITS} ==========")
-        train_df_fold = train_csv_full.iloc[train_indices]
-        val_df_fold = train_csv_full.iloc[val_indices]
 
+
+        # Obtem os IDs de paciente de treino e validação
+        train_patient_ids = patient_ids.iloc[train_indices]
+        val_patient_ids = patient_ids.iloc[val_indices]
+
+        # Filtra o DataFrame original com base nos IDs
+        train_df_fold = train_csv_full[train_csv_full['patient id'].isin(train_patient_ids)]
+        val_df_fold = train_csv_full[train_csv_full['patient id'].isin(val_patient_ids)]
+
+        # Verifique se o vazamento foi evitado
+        common_patients = set(train_df_fold['patient id']).intersection(set(val_df_fold['patient id']))
+        if common_patients:
+            raise ValueError(f"Vazamento de dados detectado! Pacientes em comum: {common_patients}")
+                
         train_loader = get_data_loader(
             imgs_path=[data_path + path for path in train_df_fold['image_path']],
             labels=list(train_df_fold['pathology']),
