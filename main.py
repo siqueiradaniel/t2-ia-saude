@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 from sklearn.model_selection import KFold
+from scipy.stats import wilcoxon
 
 # Imports de pastas do projeto
 from datasets.dataloader import get_data_loader
@@ -67,7 +68,7 @@ def main():
     # --- Configurações ---
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Usando dispositivo: {device}")
-    num_epochs = 10
+    num_epochs = 1
     learning_rate = 0.001
     batch_size = 32
     data_path = "./data/"
@@ -108,25 +109,22 @@ def main():
     class_weights = torch.tensor([weight_class_0, weight_class_1], dtype=torch.float32).to(device)
     print(f"Pesos das classes calculados: {class_weights}")
     
-    # --- Treinamento do MyCNN com Validação Cruzada ---
+    # --- Validação Cruzada do MyCNN ---
     print("\n\n========== VALIDANDO MyCNN COM VALIDAÇÃO CRUZADA ==========")
-    fold_results = []
+    mycnn_fold_results = []
     for fold, (train_indices, val_indices) in enumerate(kf.split(train_csv_full)):
         print(f"\n========== FOLD {fold + 1}/{N_SPLITS} ==========")
         train_df_fold = train_csv_full.iloc[train_indices]
         val_df_fold = train_csv_full.iloc[val_indices]
 
-        train_imgs_path = [data_path + path for path in train_df_fold['image_path']]
-        train_labels = list(train_df_fold['pathology'])
-        val_imgs_path = [data_path + path for path in val_df_fold['image_path']]
-        val_labels = list(val_df_fold['pathology'])
-
         train_loader = get_data_loader(
-            imgs_path=train_imgs_path, labels=train_labels,
+            imgs_path=[data_path + path for path in train_df_fold['image_path']],
+            labels=list(train_df_fold['pathology']),
             transform=get_train_transforms(), batch_size=batch_size, shuf=True
         )
         val_loader = get_data_loader(
-            imgs_path=val_imgs_path, labels=val_labels,
+            imgs_path=[data_path + path for path in val_df_fold['image_path']],
+            labels=list(val_df_fold['pathology']),
             transform=get_val_transforms(), batch_size=batch_size, shuf=False
         )
         
@@ -141,21 +139,61 @@ def main():
             optimizer=optimizer, device=device, num_epochs=num_epochs
         )
         
-        val_loss, val_acc = validate(trained_model, val_loader, criterion, device)
-        fold_results.append(val_acc.item())
+        _, val_acc = validate(trained_model, val_loader, criterion, device)
+        mycnn_fold_results.append(val_acc.item())
         print(f"Resultado do Fold {fold + 1}: Acurácia de Validação = {val_acc.item():.4f}")
 
-    # --- Análise dos Resultados da Validação Cruzada ---
-    mean_acc = np.mean(fold_results)
-    std_acc = np.std(fold_results)
-    print("\n\n========== RESULTADO DA VALIDAÇÃO CRUZADA DO MyCNN ==========")
-    print(f"Acurácia Média nos {N_SPLITS} folds: {mean_acc:.4f}")
-    print(f"Desvio Padrão da Acurácia: {std_acc:.4f}")
-    print(f"Resultados individuais por fold: {[round(r, 4) for r in fold_results]}")
+    # --- Validação Cruzada do ResNet50 ---
+    print("\n\n========== VALIDANDO ResNet50 COM VALIDAÇÃO CRUZADA ==========")
+    resnet_fold_results = []
+    for fold, (train_indices, val_indices) in enumerate(kf.split(train_csv_full)):
+        print(f"\n========== FOLD {fold + 1}/{N_SPLITS} ==========")
+        train_df_fold = train_csv_full.iloc[train_indices]
+        val_df_fold = train_csv_full.iloc[val_indices]
+        
+        train_loader = get_data_loader(
+            imgs_path=[data_path + path for path in train_df_fold['image_path']],
+            labels=list(train_df_fold['pathology']),
+            transform=get_train_transforms(), batch_size=batch_size, shuf=True
+        )
+        val_loader = get_data_loader(
+            imgs_path=[data_path + path for path in val_df_fold['image_path']],
+            labels=list(val_df_fold['pathology']),
+            transform=get_val_transforms(), batch_size=batch_size, shuf=False
+        )
 
+        # Treina um novo ResNet em cada fold
+        model = get_resnet_model(num_classes=2, pretrained=True)
+        model.to(device)
+        criterion = nn.CrossEntropyLoss(weight=class_weights)
+        optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+
+        trained_model, _ = train(
+            model=model, dataloader=train_loader, criterion=criterion,
+            optimizer=optimizer, device=device, num_epochs=num_epochs
+        )
+        
+        _, val_acc = validate(trained_model, val_loader, criterion, device)
+        resnet_fold_results.append(val_acc.item())
+        print(f"Resultado do Fold {fold + 1}: Acurácia de Validação = {val_acc.item():.4f}")
+
+    # --- Comparação Estatística ---
+    print("\n\n========== TESTE ESTATÍSTICO DE WILCOXON ==========")
+    statistic, p_value = wilcoxon(mycnn_fold_results, resnet_fold_results)
+    
+    print(f"Resultados de Acurácia do MyCNN: {mycnn_fold_results}")
+    print(f"Resultados de Acurácia do ResNet: {resnet_fold_results}")
+    print(f"Estatística do teste Wilcoxon: {statistic:.4f}")
+    print(f"Valor-p: {p_value:.4f}")
+
+    if p_value < 0.05:
+        print("\nA diferença de desempenho entre os modelos é estatisticamente significativa.")
+    else:
+        print("\nA diferença de desempenho entre os modelos NÃO é estatisticamente significativa (p >= 0.05).")
+    
     # --- Treinamento e Avaliação Final dos Dois Modelos ---
     
-    # Recarrega o DataLoader com todos os dados de treino
+    print("\n\n========== TREINAMENTO FINAL E AVALIAÇÃO NO CONJUNTO DE TESTE ==========")
     full_train_loader = get_data_loader(
         imgs_path=[data_path + path for path in train_csv_full['image_path']],
         labels=list(train_csv_full['pathology']),
@@ -163,10 +201,9 @@ def main():
     )
     
     # Prepara o DataLoader do conjunto de teste
-    test_imgs_path = [data_path + path for path in test_csv['image_path']]
-    test_labels = list(test_csv['pathology'])
     test_loader = get_data_loader(
-        imgs_path=test_imgs_path, labels=test_labels,
+        imgs_path=[data_path + path for path in test_csv['image_path']],
+        labels=list(test_csv['pathology']),
         transform=get_val_transforms(), batch_size=batch_size, shuf=False
     )
     
@@ -201,6 +238,7 @@ def main():
     test(trained_resnet, test_loader, criterion_resnet, device)
     torch.save(trained_resnet.state_dict(), "models/resnet50_final.pth")
     print("\n✅ ResNet50 final treinado e salvo em models/resnet50_final.pth")
+
 
 if __name__ == "__main__":
     main()
