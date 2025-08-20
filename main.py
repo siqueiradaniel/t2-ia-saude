@@ -14,35 +14,53 @@ from training.train import train
 from training.validate import validate
 from training.test import test
 from utils.augmentation import get_train_transforms, get_val_transforms
-# Removido plot_training_curves pois o histórico é por fold
 
 def load_data(csv_path, dicom_info_filename,
               mass_train_filename, calc_train_filename,
               mass_test_filename, calc_test_filename,
               data_path="./data/"):
-    # Sua função load_data (sem alterações)
+    
+    # Carrega os arquivos CSV
     dicom_info = pd.read_csv(os.path.join(csv_path, dicom_info_filename))
     mass_train = pd.read_csv(os.path.join(csv_path, mass_train_filename))
     calc_train = pd.read_csv(os.path.join(csv_path, calc_train_filename))
     mass_test = pd.read_csv(os.path.join(csv_path, mass_test_filename))
     calc_test = pd.read_csv(os.path.join(csv_path, calc_test_filename))
+
+    # Renomeia colunas para padronização
     mass_train.rename(columns={"patient_id": "patient id", "breast_density": "breast density"}, inplace=True)
     calc_train.rename(columns={"patient_id": "patient id"}, inplace=True)
     mass_test.rename(columns={"patient_id": "patient id", "breast_density": "breast density"}, inplace=True)
     calc_test.rename(columns={"patient_id": "patient id"}, inplace=True)
+
+    # Filtra informações DICOM para apenas imagens cortadas
     dicom_info = dicom_info[dicom_info["SeriesDescription"] == "cropped images"]
+
+    # Concatena os dados de massas e calcificações
     train_data_csv = pd.concat([mass_train, calc_train], ignore_index=True)
     test_data_csv = pd.concat([mass_test, calc_test], ignore_index=True)
+
+    # Extrai IDs únicos dos caminhos de arquivo para mesclagem
     train_data_csv["SeriesInstanceUID1"] = train_data_csv["image file path"].str.split('/').str[2]
     train_data_csv["SeriesInstanceUID2"] = train_data_csv["cropped image file path"].str.split('/').str[2]
     test_data_csv["SeriesInstanceUID1"] = test_data_csv["image file path"].str.split('/').str[2]
     test_data_csv["SeriesInstanceUID2"] = test_data_csv["cropped image file path"].str.split('/').str[2]
+
+    # Mescla os dados de treino e teste com as informações DICOM
     merge1 = pd.merge(dicom_info, train_data_csv, left_on="SeriesInstanceUID", right_on="SeriesInstanceUID1", how='inner')
     merge2 = pd.merge(dicom_info, train_data_csv, left_on="SeriesInstanceUID", right_on="SeriesInstanceUID2", how='inner')
     merge3 = pd.merge(dicom_info, test_data_csv, left_on="SeriesInstanceUID", right_on="SeriesInstanceUID1", how='inner')
     merge4 = pd.merge(dicom_info, test_data_csv, left_on="SeriesInstanceUID", right_on="SeriesInstanceUID2", how='inner')
+    
+    # Combina os resultados e remove duplicatas
     train_csv_merged = pd.concat([merge1, merge2], ignore_index=True).drop_duplicates()
     test_csv_merged = pd.concat([merge3, merge4], ignore_index=True).drop_duplicates()
+
+    # Limpa o caminho das imagens para garantir o carregamento correto
+    train_csv_merged['image_path'] = train_csv_merged['image_path'].str.replace('CBIS-DDSM/', '', regex=False)
+    test_csv_merged['image_path'] = test_csv_merged['image_path'].str.replace('CBIS-DDSM/', '', regex=False)
+
+    # Retorna os datasets de treino e teste completos
     return train_csv_merged, test_csv_merged
 
 def main():
@@ -77,8 +95,9 @@ def main():
 
     # Calcule os pesos uma única vez com base no dataset de treino completo
     pathology_counts = train_csv_full['pathology'].value_counts()
-    count_class_0 = pathology_counts.get(0, 1) # Usar .get com default para evitar erro se uma classe não estiver presente
-    count_class_1 = pathology_counts.get(1, 1)
+    pathology_counts_dict = pathology_counts.to_dict()
+    count_class_0 = pathology_counts_dict.get(0, 1) # Usar .get com default para evitar erro se uma classe não estiver presente
+    count_class_1 = pathology_counts_dict.get(1, 1)
 
     # O peso é o inverso da frequência da classe
     weight_class_0 = (count_class_0 + count_class_1) / count_class_0
