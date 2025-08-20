@@ -72,12 +72,12 @@ def main():
     # --- Configurações ---
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Usando dispositivo: {device}")
-    num_epochs = 10
+    num_epochs = 30
     learning_rate = 0.001
     batch_size = 32
     data_path = "./data/"
     csv_path = "./data/csv/"
-    ISDEVELOPING = True
+    ISDEVELOPING = False
 
     # >>> Ajustes de gradiente <<<
     GRAD_CLIP_NORM = 1.0     # defina None para desativar clipping
@@ -85,7 +85,7 @@ def main():
     USE_AMP = None           # None=auto (ativa se CUDA), True/False para forçar
 
     # --- Configurações da Validação Cruzada ---
-    N_SPLITS = 2
+    N_SPLITS = 3
     kf = StratifiedKFold(n_splits=N_SPLITS, shuffle=True, random_state=42)
 
     # --- Carregar Dados ---
