@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 from sklearn.model_selection import KFold
-from scipy.stats import wilcoxon
+from scipy.stats import wilcoxon, ttest_rel
 
 # Imports de pastas do projeto
 from datasets.dataloader import get_data_loader
@@ -16,11 +16,15 @@ from training.validate import validate
 from training.test import test
 from utils.augmentation import get_train_transforms, get_val_transforms
 
+
 def load_data(csv_path, dicom_info_filename,
               mass_train_filename, calc_train_filename,
               mass_test_filename, calc_test_filename,
               data_path="./data/"):
-    
+    """
+    Carrega e prepara os CSVs, faz merges com informações DICOM e retorna
+    os DataFrames de treino e teste com coluna 'image_path' relativa à pasta data/.
+    """
     # Carrega os arquivos CSV
     dicom_info = pd.read_csv(os.path.join(csv_path, dicom_info_filename))
     mass_train = pd.read_csv(os.path.join(csv_path, mass_train_filename))
@@ -52,7 +56,7 @@ def load_data(csv_path, dicom_info_filename,
     merge2 = pd.merge(dicom_info, train_data_csv, left_on="SeriesInstanceUID", right_on="SeriesInstanceUID2", how='inner')
     merge3 = pd.merge(dicom_info, test_data_csv, left_on="SeriesInstanceUID", right_on="SeriesInstanceUID1", how='inner')
     merge4 = pd.merge(dicom_info, test_data_csv, left_on="SeriesInstanceUID", right_on="SeriesInstanceUID2", how='inner')
-    
+
     # Combina os resultados e remove duplicatas
     train_csv_merged = pd.concat([merge1, merge2], ignore_index=True).drop_duplicates()
     test_csv_merged = pd.concat([merge3, merge4], ignore_index=True).drop_duplicates()
@@ -61,8 +65,8 @@ def load_data(csv_path, dicom_info_filename,
     train_csv_merged['image_path'] = train_csv_merged['image_path'].str.replace('CBIS-DDSM/', '', regex=False)
     test_csv_merged['image_path'] = test_csv_merged['image_path'].str.replace('CBIS-DDSM/', '', regex=False)
 
-    # Retorna os datasets de treino e teste completos
     return train_csv_merged, test_csv_merged
+
 
 def main():
     # --- Configurações ---
@@ -73,8 +77,13 @@ def main():
     batch_size = 32
     data_path = "./data/"
     csv_path = "./data/csv/"
-    
     ISDEVELOPING = True
+
+    # >>> Ajustes de gradiente <<<
+    GRAD_CLIP_NORM = 1.0     # defina None para desativar clipping
+    ACCUM_STEPS = 1          # >1 para acumular gradientes
+    USE_AMP = None           # None=auto (ativa se CUDA), True/False para forçar
+
     # --- Configurações da Validação Cruzada ---
     N_SPLITS = 2
     kf = KFold(n_splits=N_SPLITS, shuffle=True, random_state=42)
@@ -92,12 +101,19 @@ def main():
     )
 
     # --- Reduz o dataset para testes ---
-    if (ISDEVELOPING):
-        print ("\n----------------- ATENÇÃO: VOCE ESTÁ RODANDO COM APENAS PARTE DOS DADOS PARA DESENVOLVIMENTO -----------------\n")
-        train_csv_full = train_csv_full.sample(frac=1/200, random_state=42).reset_index(drop=True)
-        test_csv = test_csv.sample(frac=1/200, random_state=42).reset_index(drop=True)
+    if ISDEVELOPING:
+        print("\n----------------- DESENVOLVIMENTO: USANDO 20% DOS DADOS -----------------\n")
+        DEV_FRAC = 0.2  # 20%. Ajuste para 0.1, 0.3, etc., se quiser.
+        train_csv_full = train_csv_full.sample(frac=DEV_FRAC, random_state=42).reset_index(drop=True)
+        test_csv = test_csv.sample(frac=DEV_FRAC, random_state=42).reset_index(drop=True)
+        print("Tamanhos (após amostragem):",
+            f"train={len(train_csv_full)} | test={len(test_csv)}")
+        print("Distribuição de classes (train):")
+        print(train_csv_full['pathology'].value_counts())
+        print("Distribuição de classes (test):")
+        print(test_csv['pathology'].value_counts())
 
-    # Calcule os pesos uma única vez com base no dataset de treino completo
+    # Pesos de classe (com base no dataset reduzido de treino)
     pathology_counts = train_csv_full['pathology'].value_counts()
     pathology_counts_dict = pathology_counts.to_dict()
     count_class_0 = pathology_counts_dict.get(0, 1)
@@ -108,7 +124,7 @@ def main():
     weight_class_1 = (count_class_0 + count_class_1) / count_class_1
     class_weights = torch.tensor([weight_class_0, weight_class_1], dtype=torch.float32).to(device)
     print(f"Pesos das classes calculados: {class_weights}")
-    
+
     # --- Validação Cruzada do MyCNN ---
     print("\n\n========== VALIDANDO MyCNN COM VALIDAÇÃO CRUZADA ==========")
     mycnn_fold_results = []
@@ -127,7 +143,7 @@ def main():
             labels=list(val_df_fold['pathology']),
             transform=get_val_transforms(), batch_size=batch_size, shuf=False
         )
-        
+
         # Treina um novo MyCNN em cada fold
         model = MyCNN(num_classes=2)
         model.to(device)
@@ -135,10 +151,17 @@ def main():
         optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
         trained_model, _ = train(
-            model=model, dataloader=train_loader, criterion=criterion,
-            optimizer=optimizer, device=device, num_epochs=num_epochs
+            model=model,
+            dataloader=train_loader,
+            criterion=criterion,
+            optimizer=optimizer,
+            device=device,
+            num_epochs=num_epochs,
+            grad_clip_norm=GRAD_CLIP_NORM,
+            accum_steps=ACCUM_STEPS,
+            use_amp=USE_AMP
         )
-        
+
         _, val_acc = validate(trained_model, val_loader, criterion, device)
         mycnn_fold_results.append(val_acc.item())
         print(f"Resultado do Fold {fold + 1}: Acurácia de Validação = {val_acc.item():.4f}")
@@ -150,7 +173,7 @@ def main():
         print(f"\n========== FOLD {fold + 1}/{N_SPLITS} ==========")
         train_df_fold = train_csv_full.iloc[train_indices]
         val_df_fold = train_csv_full.iloc[val_indices]
-        
+
         train_loader = get_data_loader(
             imgs_path=[data_path + path for path in train_df_fold['image_path']],
             labels=list(train_df_fold['pathology']),
@@ -169,57 +192,101 @@ def main():
         optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
         trained_model, _ = train(
-            model=model, dataloader=train_loader, criterion=criterion,
-            optimizer=optimizer, device=device, num_epochs=num_epochs
+            model=model,
+            dataloader=train_loader,
+            criterion=criterion,
+            optimizer=optimizer,
+            device=device,
+            num_epochs=num_epochs,
+            grad_clip_norm=GRAD_CLIP_NORM,
+            accum_steps=ACCUM_STEPS,
+            use_amp=USE_AMP
         )
-        
+
         _, val_acc = validate(trained_model, val_loader, criterion, device)
         resnet_fold_results.append(val_acc.item())
         print(f"Resultado do Fold {fold + 1}: Acurácia de Validação = {val_acc.item():.4f}")
 
     # --- Comparação Estatística ---
-    print("\n\n========== TESTE ESTATÍSTICO DE WILCOXON ==========")
-    statistic, p_value = wilcoxon(mycnn_fold_results, resnet_fold_results)
-    
-    print(f"Resultados de Acurácia do MyCNN: {mycnn_fold_results}")
-    print(f"Resultados de Acurácia do ResNet: {resnet_fold_results}")
-    print(f"Estatística do teste Wilcoxon: {statistic:.4f}")
-    print(f"Valor-p: {p_value:.4f}")
+    print("\n\n========== TESTE ESTATÍSTICO ==========")
+    mc = np.asarray(mycnn_fold_results, dtype=float)
+    rn = np.asarray(resnet_fold_results, dtype=float)
 
-    if p_value < 0.05:
-        print("\nA diferença de desempenho entre os modelos é estatisticamente significativa.")
+    print(f"Resultados de Acurácia do MyCNN: {mc.tolist()}")
+    print(f"Resultados de Acurácia do ResNet: {rn.tolist()}")
+
+    # Resumo descritivo
+    def resumo(nome, x):
+        desvio = np.std(x, ddof=1) if len(x) > 1 else 0.0
+        print(f"{nome}: média={np.mean(x):.4f} | desvio={desvio:.4f} | n={len(x)}")
+
+    resumo("MyCNN", mc)
+    resumo("ResNet50", rn)
+
+    if len(mc) != len(rn) or len(mc) == 0:
+        print("Conjuntos com tamanhos diferentes ou vazios — pulando teste estatístico.")
+        statistic, p_value = None, None
     else:
-        print("\nA diferença de desempenho entre os modelos NÃO é estatisticamente significativa (p >= 0.05).")
-    
+        diffs = mc - rn
+        if np.allclose(diffs, 0):
+            print("Os resultados por fold são idênticos (todas as diferenças = 0).")
+            print("Wilcoxon não aplicável; assumindo estatística=0 e p=1.0000.")
+            statistic, p_value = 0.0, 1.0
+        else:
+            try:
+                # 'zsplit' lida melhor com empates/zeros do que 'wilcox'/'pratt'
+                statistic, p_value = wilcoxon(mc, rn, zero_method="zsplit")
+                print(f"Wilcoxon -> estatística={statistic:.4f} | p={p_value:.4f}")
+            except Exception as e:
+                print(f"Wilcoxon falhou ({e}). Tentando t pareado...")
+                stat_t, p_t = ttest_rel(mc, rn)
+                statistic, p_value = stat_t, p_t
+                print(f"T-test pareado -> estatística={statistic:.4f} | p={p_value:.4f}")
+
+        if p_value is not None:
+            if p_value < 0.05:
+                print("\nA diferença de desempenho é estatisticamente significativa (p < 0.05).")
+            else:
+                print("\nA diferença de desempenho NÃO é estatisticamente significativa (p >= 0.05).")
+        if len(mc) < 5:
+            print("Aviso: n de folds muito pequeno; o poder estatístico é baixo.")
+
     # --- Treinamento e Avaliação Final dos Dois Modelos ---
-    
     print("\n\n========== TREINAMENTO FINAL E AVALIAÇÃO NO CONJUNTO DE TESTE ==========")
     full_train_loader = get_data_loader(
         imgs_path=[data_path + path for path in train_csv_full['image_path']],
         labels=list(train_csv_full['pathology']),
         transform=get_train_transforms(), batch_size=batch_size, shuf=True
     )
-    
-    # Prepara o DataLoader do conjunto de teste
+
+    # DataLoader do conjunto de teste
     test_loader = get_data_loader(
         imgs_path=[data_path + path for path in test_csv['image_path']],
         labels=list(test_csv['pathology']),
         transform=get_val_transforms(), batch_size=batch_size, shuf=False
     )
-    
+
     # === MODELO MyCNN ===
     print("\n\n========== TREINAMENTO E AVALIAÇÃO FINAL DO MyCNN ==========")
     final_mycnn_model = MyCNN(num_classes=2)
     final_mycnn_model.to(device)
     criterion_mycnn = nn.CrossEntropyLoss()
     optimizer_mycnn = optim.Adam(final_mycnn_model.parameters(), lr=learning_rate)
-    
+
     trained_mycnn, _ = train(
-        model=final_mycnn_model, dataloader=full_train_loader, criterion=criterion_mycnn,
-        optimizer=optimizer_mycnn, device=device, num_epochs=num_epochs
+        model=final_mycnn_model,
+        dataloader=full_train_loader,
+        criterion=criterion_mycnn,
+        optimizer=optimizer_mycnn,
+        device=device,
+        num_epochs=num_epochs,
+        grad_clip_norm=GRAD_CLIP_NORM,
+        accum_steps=ACCUM_STEPS,
+        use_amp=USE_AMP
     )
-    
+
     test(trained_mycnn, test_loader, criterion_mycnn, device)
+    os.makedirs("models", exist_ok=True)
     torch.save(trained_mycnn.state_dict(), "models/my_cnn_final.pth")
     print("\n✅ MyCNN final treinado e salvo em models/my_cnn_final.pth")
 
@@ -229,10 +296,17 @@ def main():
     final_resnet_model.to(device)
     criterion_resnet = nn.CrossEntropyLoss()
     optimizer_resnet = optim.Adam(final_resnet_model.parameters(), lr=learning_rate)
-    
+
     trained_resnet, _ = train(
-        model=final_resnet_model, dataloader=full_train_loader, criterion=criterion_resnet,
-        optimizer=optimizer_resnet, device=device, num_epochs=num_epochs
+        model=final_resnet_model,
+        dataloader=full_train_loader,
+        criterion=criterion_resnet,
+        optimizer=optimizer_resnet,
+        device=device,
+        num_epochs=num_epochs,
+        grad_clip_norm=GRAD_CLIP_NORM,
+        accum_steps=ACCUM_STEPS,
+        use_amp=USE_AMP
     )
 
     test(trained_resnet, test_loader, criterion_resnet, device)
