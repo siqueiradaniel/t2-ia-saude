@@ -73,13 +73,10 @@ def main():
     data_path = "./data/"
     csv_path = "./data/csv/"
     
-    # --- Escolha do Modelo ---
-    USE_RESNET = False  # Mude para False para usar sua MyCNN
-    
+    ISDEVELOPING = True
     # --- Configurações da Validação Cruzada ---
-    N_SPLITS = 5
+    N_SPLITS = 2
     kf = KFold(n_splits=N_SPLITS, shuffle=True, random_state=42)
-    fold_results = []
 
     # --- Carregar Dados ---
     print("Carregando e preparando os dados...")
@@ -93,10 +90,16 @@ def main():
         data_path=data_path
     )
 
+    # --- Reduz o dataset para testes ---
+    if (ISDEVELOPING):
+        print ("\n----------------- ATENÇÃO: VOCE ESTÁ RODANDO COM APENAS PARTE DOS DADOS PARA DESENVOLVIMENTO -----------------\n")
+        train_csv_full = train_csv_full.sample(frac=1/200, random_state=42).reset_index(drop=True)
+        test_csv = test_csv.sample(frac=1/200, random_state=42).reset_index(drop=True)
+
     # Calcule os pesos uma única vez com base no dataset de treino completo
     pathology_counts = train_csv_full['pathology'].value_counts()
     pathology_counts_dict = pathology_counts.to_dict()
-    count_class_0 = pathology_counts_dict.get(0, 1) # Usar .get com default para evitar erro se uma classe não estiver presente
+    count_class_0 = pathology_counts_dict.get(0, 1)
     count_class_1 = pathology_counts_dict.get(1, 1)
 
     # O peso é o inverso da frequência da classe
@@ -105,7 +108,9 @@ def main():
     class_weights = torch.tensor([weight_class_0, weight_class_1], dtype=torch.float32).to(device)
     print(f"Pesos das classes calculados: {class_weights}")
     
-    # --- Loop de Validação Cruzada ---
+    # --- Treinamento do MyCNN com Validação Cruzada ---
+    print("\n\n========== VALIDANDO MyCNN COM VALIDAÇÃO CRUZADA ==========")
+    fold_results = []
     for fold, (train_indices, val_indices) in enumerate(kf.split(train_csv_full)):
         print(f"\n========== FOLD {fold + 1}/{N_SPLITS} ==========")
         train_df_fold = train_csv_full.iloc[train_indices]
@@ -124,13 +129,10 @@ def main():
             imgs_path=val_imgs_path, labels=val_labels,
             transform=get_val_transforms(), batch_size=batch_size, shuf=False
         )
-
-        if USE_RESNET:
-            model = get_resnet_model(num_classes=2, pretrained=True)
-        else:
-            model = MyCNN(num_classes=2)
+        
+        # Treina um novo MyCNN em cada fold
+        model = MyCNN(num_classes=2)
         model.to(device)
-
         criterion = nn.CrossEntropyLoss(weight=class_weights)
         optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
@@ -146,15 +148,13 @@ def main():
     # --- Análise dos Resultados da Validação Cruzada ---
     mean_acc = np.mean(fold_results)
     std_acc = np.std(fold_results)
-    
-    print("\n\n========== RESULTADO DA VALIDAÇÃO CRUZADA ==========")
-    print(f"Modelo: {'ResNet50' if USE_RESNET else 'MyCNN'}")
+    print("\n\n========== RESULTADO DA VALIDAÇÃO CRUZADA DO MyCNN ==========")
     print(f"Acurácia Média nos {N_SPLITS} folds: {mean_acc:.4f}")
     print(f"Desvio Padrão da Acurácia: {std_acc:.4f}")
     print(f"Resultados individuais por fold: {[round(r, 4) for r in fold_results]}")
+
+    # --- Treinamento e Avaliação Final dos Dois Modelos ---
     
-    # --- Treinamento Final e Avaliação no Conjunto de Teste ---
-    print("\n\n========== TREINAMENTO FINAL COM DADOS COMPLETOS ==========")
     # Recarrega o DataLoader com todos os dados de treino
     full_train_loader = get_data_loader(
         imgs_path=[data_path + path for path in train_csv_full['image_path']],
@@ -162,23 +162,7 @@ def main():
         transform=get_train_transforms(), batch_size=batch_size, shuf=True
     )
     
-    # Re-inicializa o modelo final
-    if USE_RESNET:
-        final_model = get_resnet_model(num_classes=2, pretrained=True)
-    else:
-        final_model = MyCNN(num_classes=2)
-    final_model.to(device)
-
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(final_model.parameters(), lr=learning_rate)
-
-    # Treina com todos os dados
-    final_trained_model, _ = train(
-        model=final_model, dataloader=full_train_loader, criterion=criterion,
-        optimizer=optimizer, device=device, num_epochs=num_epochs
-    )
-    
-    print("\n========== AVALIAÇÃO FINAL NO CONJUNTO DE TESTE ==========")
+    # Prepara o DataLoader do conjunto de teste
     test_imgs_path = [data_path + path for path in test_csv['image_path']]
     test_labels = list(test_csv['pathology'])
     test_loader = get_data_loader(
@@ -186,13 +170,37 @@ def main():
         transform=get_val_transforms(), batch_size=batch_size, shuf=False
     )
     
-    test(final_trained_model, test_loader, criterion, device)
+    # === MODELO MyCNN ===
+    print("\n\n========== TREINAMENTO E AVALIAÇÃO FINAL DO MyCNN ==========")
+    final_mycnn_model = MyCNN(num_classes=2)
+    final_mycnn_model.to(device)
+    criterion_mycnn = nn.CrossEntropyLoss()
+    optimizer_mycnn = optim.Adam(final_mycnn_model.parameters(), lr=learning_rate)
+    
+    trained_mycnn, _ = train(
+        model=final_mycnn_model, dataloader=full_train_loader, criterion=criterion_mycnn,
+        optimizer=optimizer_mycnn, device=device, num_epochs=num_epochs
+    )
+    
+    test(trained_mycnn, test_loader, criterion_mycnn, device)
+    torch.save(trained_mycnn.state_dict(), "models/my_cnn_final.pth")
+    print("\n✅ MyCNN final treinado e salvo em models/my_cnn_final.pth")
 
-    # Salva o modelo final
-    model_name = "resnet50_final.pth" if USE_RESNET else "my_cnn_final.pth"
-    os.makedirs("models", exist_ok=True)
-    torch.save(final_trained_model.state_dict(), f"models/{model_name}")
-    print(f"\n✅ Modelo final treinado e salvo em models/{model_name}")
+    # === MODELO ResNet50 ===
+    print("\n\n========== TREINAMENTO E AVALIAÇÃO FINAL DO ResNet50 ==========")
+    final_resnet_model = get_resnet_model(num_classes=2, pretrained=True)
+    final_resnet_model.to(device)
+    criterion_resnet = nn.CrossEntropyLoss()
+    optimizer_resnet = optim.Adam(final_resnet_model.parameters(), lr=learning_rate)
+    
+    trained_resnet, _ = train(
+        model=final_resnet_model, dataloader=full_train_loader, criterion=criterion_resnet,
+        optimizer=optimizer_resnet, device=device, num_epochs=num_epochs
+    )
+
+    test(trained_resnet, test_loader, criterion_resnet, device)
+    torch.save(trained_resnet.state_dict(), "models/resnet50_final.pth")
+    print("\n✅ ResNet50 final treinado e salvo em models/resnet50_final.pth")
 
 if __name__ == "__main__":
     main()
