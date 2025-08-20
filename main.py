@@ -72,7 +72,7 @@ def main():
     # --- Configurações ---
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Usando dispositivo: {device}")
-    num_epochs = 30
+    num_epochs = 10
     learning_rate = 0.001
     batch_size = 32
     data_path = "./data/"
@@ -100,16 +100,21 @@ def main():
         data_path=data_path
     )
     
+    # --- Cria um DataFrame de pacientes únicos com rótulos canônicos ---
+    # Atribui o rótulo mais severo (maligno=1) a cada paciente
+    patient_info = train_csv_full.groupby('patient id')['pathology'].max().reset_index()
+    
     # --- Reduz o dataset para testes ---
     if (ISDEVELOPING):
         print ("\n----------------- ATENÇÃO: VOCE ESTÁ RODANDO COM APENAS PARTE DOS DADOS PARA DESENVOLVIMENTO -----------------\n")
-        # DataFrame temporário para garantir que a amostragem seja feita por paciente
         DEV_FRAC = 0.05
-        temp_df = train_csv_full[['patient id', 'pathology']].drop_duplicates()
-        temp_df_sampled = temp_df.sample(frac=DEV_FRAC, random_state=42)
-        # DataFrame completo com os pacientes selecionados
+        # Amostragem do DataFrame de pacientes únicos
+        temp_df_sampled = patient_info.sample(frac=DEV_FRAC, random_state=42)
+        
+        # Filtra os DataFrames completos com base nos pacientes selecionados
         train_csv_full = train_csv_full[train_csv_full['patient id'].isin(temp_df_sampled['patient id'])].reset_index(drop=True)
         test_csv = test_csv.sample(frac=DEV_FRAC, random_state=42).reset_index(drop=True)
+
         print("Tamanhos (após amostragem):",
             f"train={len(train_csv_full)} | test={len(test_csv)}")
         print("Distribuição de classes (train):")
@@ -117,8 +122,10 @@ def main():
         print("Distribuição de classes (test):")
         print(test_csv['pathology'].value_counts())
 
+        # Recria o patient_info a partir do DataFrame reduzido para que a estratificação seja correta
+        patient_info = train_csv_full.groupby('patient id')['pathology'].max().reset_index()
+
     # --- Extrai IDs de paciente e rótulos ---
-    patient_info = train_csv_full[['patient id', 'pathology']].drop_duplicates().sort_values(by='patient id').reset_index(drop=True)
     patient_ids = patient_info['patient id']
     patient_labels = patient_info['pathology']
 
