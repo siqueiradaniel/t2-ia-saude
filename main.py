@@ -309,7 +309,7 @@ def main():
     print("\n\n========== TREINAMENTO E AVALIAÇÃO FINAL DO MyCNN ==========")
     final_mycnn_model = MyCNN(num_classes=2)
     final_mycnn_model.to(device)
-    criterion_mycnn = nn.CrossEntropyLoss()
+    criterion_mycnn = nn.CrossEntropyLoss(weight=class_weights)
     optimizer_mycnn = optim.Adam(final_mycnn_model.parameters(), lr=learning_rate)
 
     trained_mycnn, _ = train(
@@ -333,7 +333,7 @@ def main():
     print("\n\n========== TREINAMENTO E AVALIAÇÃO FINAL DO ResNet50 ==========")
     final_resnet_model = get_resnet_model(num_classes=2, pretrained=True)
     final_resnet_model.to(device)
-    criterion_resnet = nn.CrossEntropyLoss()
+    criterion_resnet = nn.CrossEntropyLoss(weight=class_weights)
     optimizer_resnet = optim.Adam(final_resnet_model.parameters(), lr=learning_rate)
 
     trained_resnet, _ = train(
