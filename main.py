@@ -197,7 +197,7 @@ def main():
     test(trained_mycnn, test_loader, criterion_mycnn, device)
     os.makedirs("models", exist_ok=True)
     torch.save(trained_mycnn.state_dict(), "models/my_cnn_final.pth")
-    print("\n✅ MyCNN final treinado e salvo em models/my_cnn_final.pth")
+    print("\nMyCNN final treinado e salvo em models/my_cnn_final.pth")
 
     # === MODELO ResNet50 (Condicional) ===
     if RUN_RESNET:
@@ -213,7 +213,7 @@ def main():
         )
         test(trained_resnet, test_loader, criterion_resnet, device)
         torch.save(trained_resnet.state_dict(), "models/resnet50_final.pth")
-        print("\n✅ ResNet50 final treinado e salvo em models/resnet50_final.pth")
+        print("\nResNet50 final treinado e salvo em models/resnet50_final.pth")
 
 if __name__ == "__main__":
     main()
