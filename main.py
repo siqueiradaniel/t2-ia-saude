@@ -1,3 +1,5 @@
+# cole-isto-em-main.py
+
 import os
 import pandas as pd
 import torch
@@ -20,7 +22,7 @@ def load_data(csv_path, dicom_info_filename,
               mass_train_filename, calc_train_filename,
               mass_test_filename, calc_test_filename,
               data_path="./data/"):
-    # (Esta função não precisa de mudanças, mantenha a sua original)
+    # (Esta função está correta, mantida como original)
     dicom_info = pd.read_csv(os.path.join(csv_path, dicom_info_filename))
     mass_train = pd.read_csv(os.path.join(csv_path, mass_train_filename))
     calc_train = pd.read_csv(os.path.join(csv_path, calc_train_filename))
@@ -67,7 +69,6 @@ def main():
     N_SPLITS = 3
     kf = StratifiedKFold(n_splits=N_SPLITS, shuffle=True, random_state=42)
 
-    # --- Carregar Dados ---
     print("Carregando e preparando os dados...")
     train_csv_full, test_csv = load_data(
         csv_path=csv_path, dicom_info_filename="dicom_info.csv",
@@ -92,9 +93,7 @@ def main():
     pathology_counts = train_csv_full['pathology'].value_counts()
     count_class_0 = pathology_counts.get(0, 1)
     count_class_1 = pathology_counts.get(1, 1)
-    weight_class_0 = (count_class_0 + count_class_1) / count_class_0
-    weight_class_1 = (count_class_0 + count_class_1) / count_class_1
-    class_weights = torch.tensor([weight_class_0, weight_class_1], dtype=torch.float32).to(device)
+    class_weights = torch.tensor([(count_class_0 + count_class_1) / count_class_0, (count_class_0 + count_class_1) / count_class_1], dtype=torch.float32).to(device)
     print(f"Pesos das classes calculados: {class_weights}")
 
     # --- Validação Cruzada do MyCNN ---
@@ -107,19 +106,14 @@ def main():
         train_df_fold = train_csv_full[train_csv_full['patient id'].isin(train_patient_ids)]
         val_df_fold = train_csv_full[train_csv_full['patient id'].isin(val_patient_ids)]
         
-        train_loader = get_data_loader(
-            imgs_path=[data_path + path for path in train_df_fold['image_path']], labels=list(train_df_fold['pathology']),
-            transform=get_train_transforms(), batch_size=batch_size, shuf=True
-        )
-        val_loader = get_data_loader(
-            imgs_path=[data_path + path for path in val_df_fold['image_path']], labels=list(val_df_fold['pathology']),
-            transform=get_val_transforms(), batch_size=batch_size, shuf=False
-        )
+        train_loader = get_data_loader(imgs_path=[data_path + path for path in train_df_fold['image_path']], labels=list(train_df_fold['pathology']), transform=get_train_transforms(), batch_size=batch_size, shuf=True)
+        val_loader = get_data_loader(imgs_path=[data_path + path for path in val_df_fold['image_path']], labels=list(val_df_fold['pathology']), transform=get_val_transforms(), batch_size=batch_size, shuf=False)
 
         model = MyCNN(num_classes=2).to(device)
         criterion = nn.CrossEntropyLoss(weight=class_weights)
         optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=3, verbose=True)
+        # CORREÇÃO: Removido o argumento 'verbose=True'
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=3)
 
         _, history = train(
             model=model, train_loader=train_loader, val_loader=val_loader, criterion=criterion, optimizer=optimizer,
@@ -131,7 +125,6 @@ def main():
         mycnn_fold_results.append(final_val_acc)
         print(f"Resultado do Fold {fold + 1}: Acurácia de Validação Final = {final_val_acc:.4f}")
 
-    # --- Bloco de Execução Condicional do ResNet50 ---
     if RUN_RESNET:
         print("\n\n========== VALIDANDO ResNet50 COM VALIDAÇÃO CRUZADA ==========")
         resnet_fold_results = []
@@ -142,19 +135,14 @@ def main():
             train_df_fold = train_csv_full[train_csv_full['patient id'].isin(train_patient_ids)]
             val_df_fold = train_csv_full[train_csv_full['patient id'].isin(val_patient_ids)]
             
-            train_loader = get_data_loader(
-                imgs_path=[data_path + path for path in train_df_fold['image_path']], labels=list(train_df_fold['pathology']),
-                transform=get_train_transforms(), batch_size=batch_size, shuf=True
-            )
-            val_loader = get_data_loader(
-                imgs_path=[data_path + path for path in val_df_fold['image_path']], labels=list(val_df_fold['pathology']),
-                transform=get_val_transforms(), batch_size=batch_size, shuf=False
-            )
+            train_loader = get_data_loader(imgs_path=[data_path + path for path in train_df_fold['image_path']], labels=list(train_df_fold['pathology']), transform=get_train_transforms(), batch_size=batch_size, shuf=True)
+            val_loader = get_data_loader(imgs_path=[data_path + path for path in val_df_fold['image_path']], labels=list(val_df_fold['pathology']), transform=get_val_transforms(), batch_size=batch_size, shuf=False)
 
             model = get_resnet_model(num_classes=2, pretrained=True).to(device)
             criterion = nn.CrossEntropyLoss(weight=class_weights)
             optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-            scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=3, verbose=True)
+            # CORREÇÃO: Removido o argumento 'verbose=True'
+            scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=3)
 
             _, history = train(
                 model=model, train_loader=train_loader, val_loader=val_loader, criterion=criterion, optimizer=optimizer,
@@ -166,50 +154,45 @@ def main():
             resnet_fold_results.append(final_val_acc)
             print(f"Resultado do Fold {fold + 1}: Acurácia de Validação Final = {final_val_acc:.4f}")
 
-        # --- Comparação Estatística ---
         print("\n\n========== TESTE ESTATÍSTICO ==========")
-        # ... (esta seção não precisa de mudanças)
+        mc = np.asarray(mycnn_fold_results); rn = np.asarray(resnet_fold_results)
+        print(f"Resultados de Acurácia do MyCNN: {mc.tolist()}"); print(f"Resultados de Acurácia do ResNet: {rn.tolist()}")
+        def resumo(nome, x): print(f"{nome}: média={np.mean(x):.4f} | desvio={np.std(x, ddof=1) if len(x) > 1 else 0.0:.4f} | n={len(x)}")
+        resumo("MyCNN", mc); resumo("ResNet50", rn)
+        if len(mc) == len(rn) and len(mc) > 1:
+            try:
+                stat, p_val = wilcoxon(mc, rn, zero_method="zsplit")
+                print(f"Wilcoxon -> estatística={stat:.4f} | p={p_val:.4f}")
+                if p_val < 0.05: print("\nA diferença é estatisticamente significativa.")
+                else: print("\nA diferença NÃO é estatisticamente significativa.")
+            except Exception as e:
+                print(f"Não foi possível rodar o teste de Wilcoxon: {e}")
 
-    # --- Treinamento e Avaliação Final ---
     print("\n\n========== TREINAMENTO FINAL E AVALIAÇÃO NO CONJUNTO DE TESTE ==========")
-    full_train_loader = get_data_loader(
-        imgs_path=[data_path + path for path in train_csv_full['image_path']],
-        labels=list(train_csv_full['pathology']),
-        transform=get_train_transforms(), batch_size=batch_size, shuf=True
-    )
-    test_loader = get_data_loader(
-        imgs_path=[data_path + path for path in test_csv['image_path']],
-        labels=list(test_csv['pathology']),
-        transform=get_val_transforms(), batch_size=batch_size, shuf=False
-    )
+    full_train_loader = get_data_loader(imgs_path=[data_path + path for path in train_csv_full['image_path']], labels=list(train_csv_full['pathology']), transform=get_train_transforms(), batch_size=batch_size, shuf=True)
+    test_loader = get_data_loader(imgs_path=[data_path + path for path in test_csv['image_path']], labels=list(test_csv['pathology']), transform=get_val_transforms(), batch_size=batch_size, shuf=False)
 
-    # === MODELO MyCNN ===
     print("\n\n========== TREINAMENTO E AVALIAÇÃO FINAL DO MyCNN ==========")
     final_mycnn_model = MyCNN(num_classes=2).to(device)
     criterion_mycnn = nn.CrossEntropyLoss(weight=class_weights)
     optimizer_mycnn = optim.Adam(final_mycnn_model.parameters(), lr=learning_rate)
-
     trained_mycnn, _ = train(
-        model=final_mycnn_model, train_loader=full_train_loader, criterion=criterion_mycnn,
-        optimizer=optimizer_mycnn, device=device, num_epochs=num_epochs,
-        grad_clip_norm=GRAD_CLIP_NORM, accum_steps=ACCUM_STEPS, use_amp=USE_AMP
+        model=final_mycnn_model, train_loader=full_train_loader, criterion=criterion_mycnn, optimizer=optimizer_mycnn,
+        device=device, num_epochs=num_epochs, grad_clip_norm=GRAD_CLIP_NORM, accum_steps=ACCUM_STEPS, use_amp=USE_AMP
     )
     test(trained_mycnn, test_loader, criterion_mycnn, device)
     os.makedirs("models", exist_ok=True)
     torch.save(trained_mycnn.state_dict(), "models/my_cnn_final.pth")
     print("\nMyCNN final treinado e salvo em models/my_cnn_final.pth")
 
-    # === MODELO ResNet50 (Condicional) ===
     if RUN_RESNET:
         print("\n\n========== TREINAMENTO E AVALIAÇÃO FINAL DO ResNet50 ==========")
         final_resnet_model = get_resnet_model(num_classes=2, pretrained=True).to(device)
         criterion_resnet = nn.CrossEntropyLoss(weight=class_weights)
         optimizer_resnet = optim.Adam(final_resnet_model.parameters(), lr=learning_rate)
-
         trained_resnet, _ = train(
-            model=final_resnet_model, train_loader=full_train_loader, criterion=criterion_resnet,
-            optimizer=optimizer_resnet, device=device, num_epochs=num_epochs,
-            grad_clip_norm=GRAD_CLIP_NORM, accum_steps=ACCUM_STEPS, use_amp=USE_AMP
+            model=final_resnet_model, train_loader=full_train_loader, criterion=criterion_resnet, optimizer=optimizer_resnet,
+            device=device, num_epochs=num_epochs, grad_clip_norm=GRAD_CLIP_NORM, accum_steps=ACCUM_STEPS, use_amp=USE_AMP
         )
         test(trained_resnet, test_loader, criterion_resnet, device)
         torch.save(trained_resnet.state_dict(), "models/resnet50_final.pth")
