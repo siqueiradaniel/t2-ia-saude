@@ -167,7 +167,7 @@ def main():
                 print(f"Não foi possível rodar o teste de Wilcoxon: {e}")
 
     print("\n\n========== TREINAMENTO FINAL E AVALIAÇÃO NO CONJUNTO DE TESTE ==========")
-    full_train_loader = get_data_loader(imgs_path=[data_path + path for path in train_csv_full['image_path']], labels=list(train_csv_full['pathology']), transform=get_val_transforms(), batch_size=batch_size, shuf=True)
+    full_train_loader = get_data_loader(imgs_path=[data_path + path for path in train_csv_full['image_path']], labels=list(train_csv_full['pathology']), transform=get_train_transforms(), batch_size=batch_size, shuf=True)
     test_loader = get_data_loader(imgs_path=[data_path + path for path in test_csv['image_path']], labels=list(test_csv['pathology']), transform=get_val_transforms(), batch_size=batch_size, shuf=False)
 
     print("\n\n========== TREINAMENTO E AVALIAÇÃO FINAL DO MyCNN ==========")
