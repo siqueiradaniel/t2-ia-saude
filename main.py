@@ -58,7 +58,7 @@ def main():
     data_path = "./data/"
     csv_path = "./data/csv/"
     ISDEVELOPING = False
-    RUN_RESNET = True 
+    RUN_RESNET = False
 
     GRAD_CLIP_NORM = 1.0
     ACCUM_STEPS = 1
