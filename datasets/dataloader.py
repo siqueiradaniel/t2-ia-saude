@@ -17,8 +17,8 @@ def find_roi_mask(image_path):
 def apply_roi_mask(image_path):
     image = Image.open(image_path).convert("RGB")
     mask_path = find_roi_mask(image_path)
-    if mask_path is None:
-        return image
+    # if mask_path is None:
+    return image
 
     mask = Image.open(mask_path).convert("L")
     # Redimensiona a máscara para o tamanho da imagem
