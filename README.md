@@ -1,3 +1,5 @@
+Link do vídeo: https://drive.google.com/file/d/1lndVEJK89OFRQ0tPUiTH4-Cudw48wZdX/view?usp=sharing 
+
 # Pipeline de Machine Learning para Classificação de Imagens de Mamografia
 
 Este projeto implementa um pipeline de Machine Learning metodologicamente rigoroso e replicável para a predição de patologias em imagens de mamografia do dataset **CBIS-DDSM**.  
