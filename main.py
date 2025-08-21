@@ -95,33 +95,32 @@ def main():
     print(f"Pesos das classes calculados: {class_weights}")
 
     # --- Validação Cruzada do MyCNN ---
-    # print("\n\n========== VALIDANDO MyCNN COM VALIDAÇÃO CRUZADA ==========")
-    # mycnn_fold_results = []
-    # for fold, (train_indices, val_indices) in enumerate(kf.split(patient_ids, y=patient_labels)):
-    #     print(f"\n========== FOLD {fold + 1}/{N_SPLITS} ==========")
-    #     train_patient_ids = patient_ids.iloc[train_indices]
-    #     val_patient_ids = patient_ids.iloc[val_indices]
-    #     train_df_fold = train_csv_full[train_csv_full['patient id'].isin(train_patient_ids)]
-    #     val_df_fold = train_csv_full[train_csv_full['patient id'].isin(val_patient_ids)]
+    print("\n\n========== VALIDANDO MyCNN COM VALIDAÇÃO CRUZADA ==========")
+    mycnn_fold_results = []
+    for fold, (train_indices, val_indices) in enumerate(kf.split(patient_ids, y=patient_labels)):
+        print(f"\n========== FOLD {fold + 1}/{N_SPLITS} ==========")
+        train_patient_ids = patient_ids.iloc[train_indices]
+        val_patient_ids = patient_ids.iloc[val_indices]
+        train_df_fold = train_csv_full[train_csv_full['patient id'].isin(train_patient_ids)]
+        val_df_fold = train_csv_full[train_csv_full['patient id'].isin(val_patient_ids)]
         
-    #     train_loader = get_data_loader(imgs_path=[data_path + path for path in train_df_fold['image_path']], labels=list(train_df_fold['pathology']), transform=get_train_transforms(), batch_size=batch_size, shuf=True)
-    #     val_loader = get_data_loader(imgs_path=[data_path + path for path in val_df_fold['image_path']], labels=list(val_df_fold['pathology']), transform=get_val_transforms(), batch_size=batch_size, shuf=False)
+        train_loader = get_data_loader(imgs_path=[data_path + path for path in train_df_fold['image_path']], labels=list(train_df_fold['pathology']), transform=get_train_transforms(), batch_size=batch_size, shuf=True)
+        val_loader = get_data_loader(imgs_path=[data_path + path for path in val_df_fold['image_path']], labels=list(val_df_fold['pathology']), transform=get_val_transforms(), batch_size=batch_size, shuf=False)
 
-    #     model = MyCNN(num_classes=2).to(device)
-    #     criterion = nn.CrossEntropyLoss(weight=class_weights)
-    #     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-    #     # CORREÇÃO: Removido o argumento 'verbose=True'
-    #     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=3)
+        model = MyCNN(num_classes=2).to(device)
+        criterion = nn.CrossEntropyLoss(weight=class_weights)
+        optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=3)
 
-    #     _, history = train(
-    #         model=model, train_loader=train_loader, val_loader=val_loader, criterion=criterion, optimizer=optimizer,
-    #         scheduler=scheduler, device=device, num_epochs=num_epochs, grad_clip_norm=GRAD_CLIP_NORM,
-    #         accum_steps=ACCUM_STEPS, use_amp=USE_AMP
-    #     )
+        _, history = train(
+            model=model, train_loader=train_loader, val_loader=val_loader, criterion=criterion, optimizer=optimizer,
+            scheduler=scheduler, device=device, num_epochs=num_epochs, grad_clip_norm=GRAD_CLIP_NORM,
+            accum_steps=ACCUM_STEPS, use_amp=USE_AMP
+        )
         
-    #     final_val_acc = history['val_acc'][-1] if history['val_acc'] else 0.0
-    #     mycnn_fold_results.append(final_val_acc)
-    #     print(f"Resultado do Fold {fold + 1}: Acurácia de Validação Final = {final_val_acc:.4f}")
+        final_val_acc = history['val_acc'][-1] if history['val_acc'] else 0.0
+        mycnn_fold_results.append(final_val_acc)
+        print(f"Resultado do Fold {fold + 1}: Acurácia de Validação Final = {final_val_acc:.4f}")
 
     if RUN_RESNET:
         print("\n\n========== VALIDANDO ResNet50 COM VALIDAÇÃO CRUZADA ==========")
@@ -153,7 +152,7 @@ def main():
             print(f"Resultado do Fold {fold + 1}: Acurácia de Validação Final = {final_val_acc:.4f}")
 
         print("\n\n========== TESTE ESTATÍSTICO ==========")
-        mc = np.asarray(mycnn_fold_results); rn = np.asarray(resnet_fold_results)
+        mc = np.asarray(resnet_fold_results); rn = np.asarray(resnet_fold_results)
         print(f"Resultados de Acurácia do MyCNN: {mc.tolist()}"); print(f"Resultados de Acurácia do ResNet: {rn.tolist()}")
         def resumo(nome, x): print(f"{nome}: média={np.mean(x):.4f} | desvio={np.std(x, ddof=1) if len(x) > 1 else 0.0:.4f} | n={len(x)}")
         resumo("MyCNN", mc); resumo("ResNet50", rn)
