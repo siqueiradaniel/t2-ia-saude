@@ -58,7 +58,6 @@ def main():
     data_path = "./data/"
     csv_path = "./data/csv/"
     ISDEVELOPING = False
-    RUN_RESNET = True
 
     GRAD_CLIP_NORM = 1.0
     ACCUM_STEPS = 1
@@ -122,34 +121,33 @@ def main():
         mycnn_fold_results.append(final_val_acc)
         print(f"Resultado do Fold {fold + 1}: Acurácia de Validação Final = {final_val_acc:.4f}")
 
-    if RUN_RESNET:
-        print("\n\n========== VALIDANDO ResNet50 COM VALIDAÇÃO CRUZADA ==========")
-        resnet_fold_results = []
-        for fold, (train_indices, val_indices) in enumerate(kf.split(patient_ids, y=patient_labels)):
-            print(f"\n========== FOLD {fold + 1}/{N_SPLITS} ==========")
-            train_patient_ids = patient_ids.iloc[train_indices]
-            val_patient_ids = patient_ids.iloc[val_indices]
-            train_df_fold = train_csv_full[train_csv_full['patient id'].isin(train_patient_ids)]
-            val_df_fold = train_csv_full[train_csv_full['patient id'].isin(val_patient_ids)]
-            
-            train_loader = get_data_loader(imgs_path=[data_path + path for path in train_df_fold['image_path']], labels=list(train_df_fold['pathology']), transform=get_train_transforms(), batch_size=batch_size, shuf=True)
-            val_loader = get_data_loader(imgs_path=[data_path + path for path in val_df_fold['image_path']], labels=list(val_df_fold['pathology']), transform=get_val_transforms(), batch_size=batch_size, shuf=False)
+    print("\n\n========== VALIDANDO ResNet50 COM VALIDAÇÃO CRUZADA ==========")
+    resnet_fold_results = []
+    for fold, (train_indices, val_indices) in enumerate(kf.split(patient_ids, y=patient_labels)):
+        print(f"\n========== FOLD {fold + 1}/{N_SPLITS} ==========")
+        train_patient_ids = patient_ids.iloc[train_indices]
+        val_patient_ids = patient_ids.iloc[val_indices]
+        train_df_fold = train_csv_full[train_csv_full['patient id'].isin(train_patient_ids)]
+        val_df_fold = train_csv_full[train_csv_full['patient id'].isin(val_patient_ids)]
+        
+        train_loader = get_data_loader(imgs_path=[data_path + path for path in train_df_fold['image_path']], labels=list(train_df_fold['pathology']), transform=get_train_transforms(), batch_size=batch_size, shuf=True)
+        val_loader = get_data_loader(imgs_path=[data_path + path for path in val_df_fold['image_path']], labels=list(val_df_fold['pathology']), transform=get_val_transforms(), batch_size=batch_size, shuf=False)
 
-            model = get_resnet_model(num_classes=2, pretrained=True).to(device)
-            criterion = nn.CrossEntropyLoss(weight=class_weights)
-            optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-            # CORREÇÃO: Removido o argumento 'verbose=True'
-            scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=3)
+        model = get_resnet_model(num_classes=2, pretrained=True).to(device)
+        criterion = nn.CrossEntropyLoss(weight=class_weights)
+        optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+        # CORREÇÃO: Removido o argumento 'verbose=True'
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=3)
 
-            _, history = train(
-                model=model, train_loader=train_loader, val_loader=val_loader, criterion=criterion, optimizer=optimizer,
-                scheduler=scheduler, device=device, num_epochs=num_epochs, grad_clip_norm=GRAD_CLIP_NORM,
-                accum_steps=ACCUM_STEPS, use_amp=USE_AMP
-            )
-            
-            final_val_acc = history['val_acc'][-1] if history['val_acc'] else 0.0
-            resnet_fold_results.append(final_val_acc)
-            print(f"Resultado do Fold {fold + 1}: Acurácia de Validação Final = {final_val_acc:.4f}")
+        _, history = train(
+            model=model, train_loader=train_loader, val_loader=val_loader, criterion=criterion, optimizer=optimizer,
+            scheduler=scheduler, device=device, num_epochs=num_epochs, grad_clip_norm=GRAD_CLIP_NORM,
+            accum_steps=ACCUM_STEPS, use_amp=USE_AMP
+        )
+        
+        final_val_acc = history['val_acc'][-1] if history['val_acc'] else 0.0
+        resnet_fold_results.append(final_val_acc)
+        print(f"Resultado do Fold {fold + 1}: Acurácia de Validação Final = {final_val_acc:.4f}")
 
         print("\n\n========== TESTE ESTATÍSTICO ==========")
         mc = np.asarray(resnet_fold_results); rn = np.asarray(resnet_fold_results)
@@ -182,18 +180,17 @@ def main():
     torch.save(trained_mycnn.state_dict(), "models/my_cnn_final.pth")
     print("\nMyCNN final treinado e salvo em models/my_cnn_final.pth")
 
-    if RUN_RESNET:
-        print("\n\n========== TREINAMENTO E AVALIAÇÃO FINAL DO ResNet50 ==========")
-        final_resnet_model = get_resnet_model(num_classes=2, pretrained=True).to(device)
-        criterion_resnet = nn.CrossEntropyLoss(weight=class_weights)
-        optimizer_resnet = optim.Adam(final_resnet_model.parameters(), lr=learning_rate)
-        trained_resnet, _ = train(
-            model=final_resnet_model, train_loader=full_train_loader, criterion=criterion_resnet, optimizer=optimizer_resnet,
-            device=device, num_epochs=num_epochs, grad_clip_norm=GRAD_CLIP_NORM, accum_steps=ACCUM_STEPS, use_amp=USE_AMP
-        )
-        test(trained_resnet, test_loader, criterion_resnet, device)
-        torch.save(trained_resnet.state_dict(), "models/resnet50_final.pth")
-        print("\nResNet50 final treinado e salvo em models/resnet50_final.pth")
+    print("\n\n========== TREINAMENTO E AVALIAÇÃO FINAL DO ResNet50 ==========")
+    final_resnet_model = get_resnet_model(num_classes=2, pretrained=True).to(device)
+    criterion_resnet = nn.CrossEntropyLoss(weight=class_weights)
+    optimizer_resnet = optim.Adam(final_resnet_model.parameters(), lr=learning_rate)
+    trained_resnet, _ = train(
+        model=final_resnet_model, train_loader=full_train_loader, criterion=criterion_resnet, optimizer=optimizer_resnet,
+        device=device, num_epochs=num_epochs, grad_clip_norm=GRAD_CLIP_NORM, accum_steps=ACCUM_STEPS, use_amp=USE_AMP
+    )
+    test(trained_resnet, test_loader, criterion_resnet, device)
+    torch.save(trained_resnet.state_dict(), "models/resnet50_final.pth")
+    print("\nResNet50 final treinado e salvo em models/resnet50_final.pth")
 
 if __name__ == "__main__":
     main()
