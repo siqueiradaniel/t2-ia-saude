@@ -54,8 +54,8 @@ def main():
     # --- Configurações ---
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Usando dispositivo: {device}")
-    num_epochs = 15
-    learning_rate = 0.001
+    num_epochs = 10
+    learning_rate = 0.0001
     batch_size = 32
     data_path = "./data/"
     csv_path = "./data/csv/"
@@ -66,7 +66,7 @@ def main():
     ACCUM_STEPS = 1
     USE_AMP = None
 
-    N_SPLITS = 3
+    N_SPLITS = 2
     kf = StratifiedKFold(n_splits=N_SPLITS, shuffle=True, random_state=42)
 
     print("Carregando e preparando os dados...")
