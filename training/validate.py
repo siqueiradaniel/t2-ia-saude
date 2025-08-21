@@ -1,6 +1,9 @@
 import torch
 
 def validate(model, dataloader, criterion, device):
+    """
+    Função limpa que apenas executa a validação e retorna as métricas.
+    """
     model.eval()
     running_loss = 0.0
     running_corrects = 0
@@ -10,10 +13,12 @@ def validate(model, dataloader, criterion, device):
         for batch in dataloader:
             if batch is None:
                 continue
-            if isinstance(batch, (tuple, list)):
+            
+            # Garante que o batch seja desempacotado corretamente
+            if isinstance(batch, (tuple, list)) and len(batch) >= 2:
                 inputs, labels = batch[0], batch[1]
             else:
-                inputs, labels = batch["inputs"], batch["labels"]
+                continue # Pula batches malformados
 
             inputs = inputs.to(device, non_blocking=True)
             labels = labels.to(device, non_blocking=True)
@@ -29,5 +34,4 @@ def validate(model, dataloader, criterion, device):
     val_loss = running_loss / max(1, total_samples)
     val_acc = torch.tensor(running_corrects / max(1, total_samples), dtype=torch.float32)
 
-    print(f"Validation - Loss: {val_loss:.4f} - Acc: {val_acc:.4f}")
     return val_loss, val_acc
