@@ -193,66 +193,66 @@ def main():
         mycnn_fold_results.append(val_acc.item())
         print(f"Resultado do Fold {fold + 1}: Acurácia de Validação = {val_acc.item():.4f}")
 
-    # --- Validação Cruzada do ResNet50 ---
-    print("\n\n========== VALIDANDO ResNet50 COM VALIDAÇÃO CRUZADA ==========")
-    resnet_fold_results = []
-    for fold, (train_indices, val_indices) in enumerate(kf.split(patient_ids, y=patient_labels)):
-        print(f"\n========== FOLD {fold + 1}/{N_SPLITS} ==========")
+    # # --- Validação Cruzada do ResNet50 ---
+    # print("\n\n========== VALIDANDO ResNet50 COM VALIDAÇÃO CRUZADA ==========")
+    # resnet_fold_results = []
+    # for fold, (train_indices, val_indices) in enumerate(kf.split(patient_ids, y=patient_labels)):
+    #     print(f"\n========== FOLD {fold + 1}/{N_SPLITS} ==========")
 
 
-        # Obtem os IDs de paciente de treino e validação
-        train_patient_ids = patient_ids.iloc[train_indices]
-        val_patient_ids = patient_ids.iloc[val_indices]
+    #     # Obtem os IDs de paciente de treino e validação
+    #     train_patient_ids = patient_ids.iloc[train_indices]
+    #     val_patient_ids = patient_ids.iloc[val_indices]
 
-        # Filtra o DataFrame original com base nos IDs
-        train_df_fold = train_csv_full[train_csv_full['patient id'].isin(train_patient_ids)]
-        val_df_fold = train_csv_full[train_csv_full['patient id'].isin(val_patient_ids)]
+    #     # Filtra o DataFrame original com base nos IDs
+    #     train_df_fold = train_csv_full[train_csv_full['patient id'].isin(train_patient_ids)]
+    #     val_df_fold = train_csv_full[train_csv_full['patient id'].isin(val_patient_ids)]
 
-        # Verifique se o vazamento foi evitado
-        common_patients = set(train_df_fold['patient id']).intersection(set(val_df_fold['patient id']))
-        if common_patients:
-            raise ValueError(f"Vazamento de dados detectado! Pacientes em comum: {common_patients}")
+    #     # Verifique se o vazamento foi evitado
+    #     common_patients = set(train_df_fold['patient id']).intersection(set(val_df_fold['patient id']))
+    #     if common_patients:
+    #         raise ValueError(f"Vazamento de dados detectado! Pacientes em comum: {common_patients}")
                 
-        train_loader = get_data_loader(
-            imgs_path=[data_path + path for path in train_df_fold['image_path']],
-            labels=list(train_df_fold['pathology']),
-            transform=get_train_transforms(), batch_size=batch_size, shuf=True
-        )
-        val_loader = get_data_loader(
-            imgs_path=[data_path + path for path in val_df_fold['image_path']],
-            labels=list(val_df_fold['pathology']),
-            transform=get_val_transforms(), batch_size=batch_size, shuf=False
-        )
+    #     train_loader = get_data_loader(
+    #         imgs_path=[data_path + path for path in train_df_fold['image_path']],
+    #         labels=list(train_df_fold['pathology']),
+    #         transform=get_train_transforms(), batch_size=batch_size, shuf=True
+    #     )
+        # val_loader = get_data_loader(
+        #     imgs_path=[data_path + path for path in val_df_fold['image_path']],
+        #     labels=list(val_df_fold['pathology']),
+        #     transform=get_val_transforms(), batch_size=batch_size, shuf=False
+        # )
 
-        # Treina um novo ResNet em cada fold
-        model = get_resnet_model(num_classes=2, pretrained=True)
-        model.to(device)
-        criterion = nn.CrossEntropyLoss(weight=class_weights)
-        optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+        # # Treina um novo ResNet em cada fold
+        # model = get_resnet_model(num_classes=2, pretrained=True)
+        # model.to(device)
+        # criterion = nn.CrossEntropyLoss(weight=class_weights)
+        # optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
-        trained_model, _ = train(
-            model=model,
-            dataloader=train_loader,
-            criterion=criterion,
-            optimizer=optimizer,
-            device=device,
-            num_epochs=num_epochs,
-            grad_clip_norm=GRAD_CLIP_NORM,
-            accum_steps=ACCUM_STEPS,
-            use_amp=USE_AMP
-        )
+        # trained_model, _ = train(
+        #     model=model,
+        #     dataloader=train_loader,
+        #     criterion=criterion,
+        #     optimizer=optimizer,
+        #     device=device,
+        #     num_epochs=num_epochs,
+        #     grad_clip_norm=GRAD_CLIP_NORM,
+        #     accum_steps=ACCUM_STEPS,
+        #     use_amp=USE_AMP
+        # )
 
-        _, val_acc = validate(trained_model, val_loader, criterion, device)
-        resnet_fold_results.append(val_acc.item())
-        print(f"Resultado do Fold {fold + 1}: Acurácia de Validação = {val_acc.item():.4f}")
+        # _, val_acc = validate(trained_model, val_loader, criterion, device)
+        # resnet_fold_results.append(val_acc.item())
+        # print(f"Resultado do Fold {fold + 1}: Acurácia de Validação = {val_acc.item():.4f}")
 
     # --- Comparação Estatística ---
     print("\n\n========== TESTE ESTATÍSTICO ==========")
     mc = np.asarray(mycnn_fold_results, dtype=float)
-    rn = np.asarray(resnet_fold_results, dtype=float)
+    # rn = np.asarray(resnet_fold_results, dtype=float)
 
     print(f"Resultados de Acurácia do MyCNN: {mc.tolist()}")
-    print(f"Resultados de Acurácia do ResNet: {rn.tolist()}")
+    # print(f"Resultados de Acurácia do ResNet: {rn.tolist()}")
 
     # Resumo descritivo
     def resumo(nome, x):
@@ -260,7 +260,7 @@ def main():
         print(f"{nome}: média={np.mean(x):.4f} | desvio={desvio:.4f} | n={len(x)}")
 
     resumo("MyCNN", mc)
-    resumo("ResNet50", rn)
+    # resumo("ResNet50", rn)
 
     if len(mc) != len(rn) or len(mc) == 0:
         print("Conjuntos com tamanhos diferentes ou vazios — pulando teste estatístico.")
@@ -329,28 +329,28 @@ def main():
     torch.save(trained_mycnn.state_dict(), "models/my_cnn_final.pth")
     print("\n✅ MyCNN final treinado e salvo em models/my_cnn_final.pth")
 
-    # === MODELO ResNet50 ===
-    print("\n\n========== TREINAMENTO E AVALIAÇÃO FINAL DO ResNet50 ==========")
-    final_resnet_model = get_resnet_model(num_classes=2, pretrained=True)
-    final_resnet_model.to(device)
-    criterion_resnet = nn.CrossEntropyLoss(weight=class_weights)
-    optimizer_resnet = optim.Adam(final_resnet_model.parameters(), lr=learning_rate)
+    # # === MODELO ResNet50 ===
+    # print("\n\n========== TREINAMENTO E AVALIAÇÃO FINAL DO ResNet50 ==========")
+    # final_resnet_model = get_resnet_model(num_classes=2, pretrained=True)
+    # final_resnet_model.to(device)
+    # criterion_resnet = nn.CrossEntropyLoss(weight=class_weights)
+    # optimizer_resnet = optim.Adam(final_resnet_model.parameters(), lr=learning_rate)
 
-    trained_resnet, _ = train(
-        model=final_resnet_model,
-        dataloader=full_train_loader,
-        criterion=criterion_resnet,
-        optimizer=optimizer_resnet,
-        device=device,
-        num_epochs=num_epochs,
-        grad_clip_norm=GRAD_CLIP_NORM,
-        accum_steps=ACCUM_STEPS,
-        use_amp=USE_AMP
-    )
+    # trained_resnet, _ = train(
+    #     model=final_resnet_model,
+    #     dataloader=full_train_loader,
+    #     criterion=criterion_resnet,
+    #     optimizer=optimizer_resnet,
+    #     device=device,
+    #     num_epochs=num_epochs,
+    #     grad_clip_norm=GRAD_CLIP_NORM,
+    #     accum_steps=ACCUM_STEPS,
+    #     use_amp=USE_AMP
+    # )
 
-    test(trained_resnet, test_loader, criterion_resnet, device)
-    torch.save(trained_resnet.state_dict(), "models/resnet50_final.pth")
-    print("\n✅ ResNet50 final treinado e salvo em models/resnet50_final.pth")
+    # test(trained_resnet, test_loader, criterion_resnet, device)
+    # torch.save(trained_resnet.state_dict(), "models/resnet50_final.pth")
+    # print("\n✅ ResNet50 final treinado e salvo em models/resnet50_final.pth")
 
 
 if __name__ == "__main__":
